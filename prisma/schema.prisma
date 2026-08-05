@@ -1,0 +1,97 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// This app's tables live in their own "chat_widget" schema rather than
+// "public" because this Supabase project also hosts an unrelated app's
+// live data in "public" — keeping Prisma scoped to "chat_widget" means
+// migrations never touch that schema.
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+  schemas   = ["chat_widget"]
+}
+
+model Session {
+  id            String    @id
+  shop          String
+  state         String
+  isOnline      Boolean   @default(false)
+  scope         String?
+  expires       DateTime?
+  accessToken   String
+  userId        BigInt?
+  firstName     String?
+  lastName      String?
+  email         String?
+  accountOwner  Boolean   @default(false)
+  locale        String?
+  collaborator  Boolean?  @default(false)
+  emailVerified Boolean?  @default(false)
+  refreshToken        String?
+  refreshTokenExpires DateTime?
+
+  @@schema("chat_widget")
+}
+
+model WidgetSettings {
+  id              String   @id @default(cuid())
+  shop            String   @unique
+  enabled         Boolean  @default(true)
+  welcomeMessage  String   @default("Hi! How can I help you find what you're looking for?")
+  systemPrompt    String   @default("You are a friendly, concise shopping assistant for this store. Use the product lookup tool to answer questions about products, pricing, and availability. Never invent products or prices.")
+  primaryColor    String   @default("#1a1a1a")
+  position        String   @default("bottom-right")
+  geminiModel     String   @default("gemini-2.5-flash")
+  language        String   @default("auto")
+  knowledgeCollections Json @default("[]")
+  updatedAt       DateTime @updatedAt
+
+  @@schema("chat_widget")
+}
+
+model KnowledgeEntry {
+  id        String   @id @default(cuid())
+  shop      String
+  question  String
+  answer    String
+  videoId   String?
+  videoUrl  String?
+  videoName String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([shop])
+  @@schema("chat_widget")
+}
+
+model Conversation {
+  id             String   @id @default(cuid())
+  shop           String
+  conversationId String
+  customerName   String
+  customerEmail  String?
+  customerPhone  String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([shop, conversationId])
+  @@schema("chat_widget")
+}
+
+model ChatMessage {
+  id             String   @id @default(cuid())
+  shop           String
+  conversationId String
+  role           String
+  content        String
+  createdAt      DateTime @default(now())
+
+  @@index([shop, conversationId, createdAt])
+  @@index([shop, createdAt])
+  @@schema("chat_widget")
+}

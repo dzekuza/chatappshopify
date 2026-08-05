@@ -1,0 +1,17 @@
+<div
+  id="ai-chat-widget-root"
+  data-chat-endpoint="{{ shop.url }}/apps/chat-widget/chat"
+  data-settings-endpoint="{{ shop.url }}/apps/chat-widget/settings"
+  data-messages-endpoint="{{ shop.url }}/apps/chat-widget/messages"
+></div>
+
+{{ 'ai-chat-widget.css' | asset_url | stylesheet_tag }}
+<script src="{{ 'ai-chat-widget.js' | asset_url }}" defer></script>
+
+{% schema %}
+{
+  "name": "AI Chat Widget",
+  "target": "body",
+  "settings": []
+}
+{% endschema %}
