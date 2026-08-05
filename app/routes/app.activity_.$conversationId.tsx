@@ -72,6 +72,13 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     },
   });
 
+  if (conversation.needsHuman) {
+    await prisma.conversation.update({
+      where: { shop_conversationId: { shop: session.shop, conversationId } },
+      data: { needsHuman: false },
+    });
+  }
+
   return Response.json({ ok: true });
 };
 
@@ -88,6 +95,12 @@ export default function ActivityThread() {
       <s-link slot="breadcrumb-actions" href="/app/activity">
         Activity
       </s-link>
+
+      {conversation?.needsHuman ? (
+        <s-banner heading="Needs attention" tone="warning">
+          This shopper asked to talk to a human. Reply below to resolve it.
+        </s-banner>
+      ) : null}
 
       <s-section heading="Messages">
         {messages.length === 0 ? (

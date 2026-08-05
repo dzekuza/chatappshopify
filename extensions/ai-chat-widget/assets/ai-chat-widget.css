@@ -312,10 +312,39 @@
   word-break: break-word;
 }
 
+.aicw-message-paragraph {
+  margin: 0 0 6px;
+  word-break: break-word;
+}
+
+.aicw-message-paragraph:last-child {
+  margin-bottom: 0;
+}
+
+.aicw-message-list {
+  margin: 0 0 6px;
+  padding-left: 18px;
+}
+
+.aicw-message-list:last-child {
+  margin-bottom: 0;
+}
+
+.aicw-message-list li {
+  margin-bottom: 2px;
+}
+
 .aicw-message-video {
   display: block;
   max-width: 100%;
   width: 100%;
+  border-radius: 10px;
+  margin-top: 6px;
+}
+
+.aicw-message-image {
+  display: block;
+  max-width: 100%;
   border-radius: 10px;
   margin-top: 6px;
 }

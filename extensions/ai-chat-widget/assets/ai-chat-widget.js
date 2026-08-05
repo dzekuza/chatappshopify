@@ -368,34 +368,122 @@
       startAgentPolling();
     });
 
+    // Matches a "Video: <url>" / "Image: <url>" line whole (as the knowledge
+    // base prompt instructs the model to emit) so the label doesn't leak
+    // into the rendered text — the model doesn't always drop the label even
+    // though it's only supposed to echo the bare URL.
+    var LABELED_MEDIA_LINE_REGEX = /^[ \t]*(?:Video|Image)[ \t]*:[ \t]*(https?:\/\/\S+)[ \t]*$/im;
+    var VIDEO_EXT_REGEX = /\.(?:mp4|mov|webm|m3u8)(?:\?|$)/i;
+    var IMAGE_EXT_REGEX = /\.(?:jpe?g|png|gif|webp|svg)(?:\?|$)/i;
     var VIDEO_URL_REGEX = /https?:\/\/\S+\.(?:mp4|mov|webm|m3u8)(?:\?\S*)?/i;
+    var IMAGE_URL_REGEX = /https?:\/\/\S+\.(?:jpe?g|png|gif|webp|svg)(?:\?\S*)?/i;
+
+    function extractMedia(text) {
+      var labeled = text.match(LABELED_MEDIA_LINE_REGEX);
+      if (labeled) {
+        var url = labeled[1];
+        var isVideo = VIDEO_EXT_REGEX.test(url);
+        var isImage = !isVideo && IMAGE_EXT_REGEX.test(url);
+        if (isVideo || isImage) {
+          return {
+            url: url,
+            isVideo: isVideo,
+            matchText: labeled[0],
+            index: labeled.index,
+          };
+        }
+      }
+      var video = text.match(VIDEO_URL_REGEX);
+      if (video) {
+        return { url: video[0], isVideo: true, matchText: video[0], index: video.index };
+      }
+      var image = text.match(IMAGE_URL_REGEX);
+      if (image) {
+        return { url: image[0], isVideo: false, matchText: image[0], index: image.index };
+      }
+      return null;
+    }
+
+    // Minimal **bold** support, applied within a single line/paragraph.
+    function appendInlineFormatted(el, text) {
+      var parts = text.split(/(\*\*[^*]+\*\*)/g);
+      for (var i = 0; i < parts.length; i++) {
+        var part = parts[i];
+        if (!part) continue;
+        if (part.slice(0, 2) === "**" && part.slice(-2) === "**" && part.length > 4) {
+          var strong = document.createElement("strong");
+          strong.textContent = part.slice(2, -2);
+          el.appendChild(strong);
+        } else {
+          el.appendChild(document.createTextNode(part));
+        }
+      }
+    }
+
+    // Minimal markdown: paragraphs plus "* "/"- " bullet lists, each line
+    // supporting **bold**. Deliberately built with createElement/textContent
+    // rather than innerHTML so AI-generated or merchant-entered text can
+    // never inject markup.
+    function appendFormattedBlock(container, text) {
+      var lines = text.split("\n");
+      var i = 0;
+      while (i < lines.length) {
+        var line = lines[i];
+        if (/^\s*[-*]\s+/.test(line)) {
+          var ul = document.createElement("ul");
+          ul.className = "aicw-message-list";
+          while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) {
+            var li = document.createElement("li");
+            appendInlineFormatted(li, lines[i].replace(/^\s*[-*]\s+/, ""));
+            ul.appendChild(li);
+            i++;
+          }
+          container.appendChild(ul);
+        } else if (line.trim() === "") {
+          i++;
+        } else {
+          var p = document.createElement("p");
+          p.className = "aicw-message-paragraph";
+          appendInlineFormatted(p, line);
+          container.appendChild(p);
+          i++;
+        }
+      }
+    }
 
     function renderMessageContent(el, text) {
-      var match = text.match(VIDEO_URL_REGEX);
-      if (!match) {
-        el.textContent = text;
+      el.innerHTML = "";
+      var media = extractMedia(text);
+      if (!media) {
+        appendFormattedBlock(el, text);
         return;
       }
 
-      el.innerHTML = "";
-      var videoUrl = match[0];
       var remainder = (
-        text.slice(0, match.index) + text.slice(match.index + videoUrl.length)
+        text.slice(0, media.index) + text.slice(media.index + media.matchText.length)
       ).trim();
 
       if (remainder) {
         var textEl = document.createElement("div");
         textEl.className = "aicw-message-text";
-        textEl.textContent = remainder;
+        appendFormattedBlock(textEl, remainder);
         el.appendChild(textEl);
       }
 
-      var video = document.createElement("video");
-      video.className = "aicw-message-video";
-      video.src = videoUrl;
-      video.controls = true;
-      video.setAttribute("playsinline", "");
-      el.appendChild(video);
+      if (media.isVideo) {
+        var video = document.createElement("video");
+        video.className = "aicw-message-video";
+        video.src = media.url;
+        video.controls = true;
+        video.setAttribute("playsinline", "");
+        el.appendChild(video);
+      } else {
+        var image = document.createElement("img");
+        image.className = "aicw-message-image";
+        image.src = media.url;
+        image.alt = "";
+        el.appendChild(image);
+      }
     }
 
     function appendMessage(role, text) {

@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import type {
   ActionFunctionArgs,
   HeadersFunction,
@@ -211,28 +211,113 @@ function greetingForNow() {
   return "Evening";
 }
 
+// Matches a "Video: <url>" / "Image: <url>" line whole (as the knowledge
+// base prompt instructs the model to emit) so the label doesn't leak into
+// the rendered text — the model doesn't always drop the label even though
+// it's only supposed to echo the bare URL.
+const LABELED_MEDIA_LINE_REGEX = /^[ \t]*(?:Video|Image)[ \t]*:[ \t]*(https?:\/\/\S+)[ \t]*$/im;
+const VIDEO_EXT_REGEX = /\.(?:mp4|mov|webm|m3u8)(?:\?|$)/i;
+const IMAGE_EXT_REGEX = /\.(?:jpe?g|png|gif|webp|svg)(?:\?|$)/i;
 const VIDEO_URL_REGEX = /https?:\/\/\S+\.(?:mp4|mov|webm|m3u8)(?:\?\S*)?/i;
+const IMAGE_URL_REGEX = /https?:\/\/\S+\.(?:jpe?g|png|gif|webp|svg)(?:\?\S*)?/i;
+
+type ExtractedMedia = {
+  url: string;
+  isVideo: boolean;
+  matchText: string;
+  index: number;
+};
+
+function extractMedia(text: string): ExtractedMedia | null {
+  const labeled = text.match(LABELED_MEDIA_LINE_REGEX);
+  if (labeled) {
+    const url = labeled[1];
+    const isVideo = VIDEO_EXT_REGEX.test(url);
+    const isImage = !isVideo && IMAGE_EXT_REGEX.test(url);
+    if (isVideo || isImage) {
+      return { url, isVideo, matchText: labeled[0], index: labeled.index ?? 0 };
+    }
+  }
+  const video = text.match(VIDEO_URL_REGEX);
+  if (video) {
+    return { url: video[0], isVideo: true, matchText: video[0], index: video.index ?? 0 };
+  }
+  const image = text.match(IMAGE_URL_REGEX);
+  if (image) {
+    return { url: image[0], isVideo: false, matchText: image[0], index: image.index ?? 0 };
+  }
+  return null;
+}
+
+// Minimal **bold** support, applied within a single line/paragraph.
+function renderInlineFormatted(text: string): ReactNode[] {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, i) => {
+    if (part.slice(0, 2) === "**" && part.slice(-2) === "**" && part.length > 4) {
+      return <strong key={i}>{part.slice(2, -2)}</strong>;
+    }
+    return part ? <span key={i}>{part}</span> : null;
+  });
+}
+
+// Minimal markdown: paragraphs plus "* "/"- " bullet lists, each line
+// supporting **bold**.
+function renderFormattedBlock(text: string): ReactNode[] {
+  const lines = text.split("\n");
+  const nodes: ReactNode[] = [];
+  let i = 0;
+  let key = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (/^\s*[-*]\s+/.test(line)) {
+      const items: ReactNode[] = [];
+      while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) {
+        items.push(
+          <li key={key++}>{renderInlineFormatted(lines[i].replace(/^\s*[-*]\s+/, ""))}</li>,
+        );
+        i++;
+      }
+      nodes.push(
+        <ul key={key++} className={styles.previewMessageList}>
+          {items}
+        </ul>,
+      );
+    } else if (line.trim() === "") {
+      i++;
+    } else {
+      nodes.push(
+        <p key={key++} className={styles.previewMessageParagraph}>
+          {renderInlineFormatted(line)}
+        </p>,
+      );
+      i++;
+    }
+  }
+  return nodes;
+}
 
 function renderMessageBody(content: string) {
-  const match = content.match(VIDEO_URL_REGEX);
-  if (!match) return content;
+  const media = extractMedia(content);
+  if (!media) return renderFormattedBlock(content);
 
-  const videoUrl = match[0];
-  const index = match.index ?? 0;
   const remainder = (
-    content.slice(0, index) + content.slice(index + videoUrl.length)
+    content.slice(0, media.index) + content.slice(media.index + media.matchText.length)
   ).trim();
 
   return (
     <>
-      {remainder ? <div>{remainder}</div> : null}
-      {/* eslint-disable-next-line jsx-a11y/media-has-caption -- merchant-uploaded videos have no caption track */}
-      <video
-        src={videoUrl}
-        controls
-        playsInline
-        className={styles.previewMessageVideo}
-      />
+      {remainder ? <div>{renderFormattedBlock(remainder)}</div> : null}
+      {media.isVideo ? (
+        // eslint-disable-next-line jsx-a11y/media-has-caption -- merchant-uploaded videos have no caption track
+        <video
+          src={media.url}
+          controls
+          playsInline
+          className={styles.previewMessageVideo}
+        />
+      ) : (
+        <img src={media.url} alt="" className={styles.previewMessageImage} />
+      )}
     </>
   );
 }

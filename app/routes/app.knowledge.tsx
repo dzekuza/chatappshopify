@@ -10,14 +10,25 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import type { VideoFile } from "./app.knowledge_.videos";
+import type { ImageFile } from "./app.knowledge_.images";
+import type { ProductOption } from "./app.knowledge_.products";
+
+type EntryType = "freeform" | "product";
+type MediaType = "" | "video" | "image";
+type PickerMode = null | "video" | "image" | "product";
 
 const EMPTY_FORM = {
   id: "",
+  type: "freeform" as EntryType,
   question: "",
+  productId: "",
+  productTitle: "",
+  productHandle: "",
   answer: "",
-  videoId: "",
-  videoUrl: "",
-  videoName: "",
+  mediaType: "" as MediaType,
+  mediaId: "",
+  mediaUrl: "",
+  mediaName: "",
 };
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -44,15 +55,48 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return { ok: true };
   }
 
-  const question = String(payload.question ?? "").trim();
+  const type = payload.type === "product" ? "product" : "freeform";
   const answer = String(payload.answer ?? "").trim();
-  const videoId = String(payload.videoId ?? "").trim() || null;
-  const videoUrl = String(payload.videoUrl ?? "").trim() || null;
-  const videoName = String(payload.videoName ?? "").trim() || null;
+  const mediaType = String(payload.mediaType ?? "").trim() || null;
+  const mediaId = String(payload.mediaId ?? "").trim() || null;
+  const mediaUrl = String(payload.mediaUrl ?? "").trim() || null;
+  const mediaName = String(payload.mediaName ?? "").trim() || null;
 
-  if (!question || !answer) {
-    return { error: "Question and answer are required." };
+  if (!answer) {
+    return { error: "Answer is required." };
   }
+
+  let question: string | null = null;
+  let productId: string | null = null;
+  let productTitle: string | null = null;
+  let productHandle: string | null = null;
+
+  if (type === "freeform") {
+    question = String(payload.question ?? "").trim();
+    if (!question) {
+      return { error: "Question is required for a free-form entry." };
+    }
+  } else {
+    productId = String(payload.productId ?? "").trim();
+    productTitle = String(payload.productTitle ?? "").trim();
+    productHandle = String(payload.productHandle ?? "").trim() || null;
+    if (!productId || !productTitle) {
+      return { error: "Select a product for this entry." };
+    }
+  }
+
+  const data = {
+    type,
+    question,
+    answer,
+    productId,
+    productTitle,
+    productHandle,
+    mediaType,
+    mediaId,
+    mediaUrl,
+    mediaName,
+  };
 
   const id = String(payload.id ?? "").trim();
 
@@ -65,37 +109,43 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     }
     const entry = await prisma.knowledgeEntry.update({
       where: { id },
-      data: { question, answer, videoId, videoUrl, videoName },
+      data,
     });
     return { entry };
   }
 
   const entry = await prisma.knowledgeEntry.create({
-    data: {
-      shop: session.shop,
-      question,
-      answer,
-      videoId,
-      videoUrl,
-      videoName,
-    },
+    data: { shop: session.shop, ...data },
   });
   return { entry };
 };
+
+function mediaBadgeLabel(mediaType: string | null) {
+  if (mediaType === "video") return "Video attached";
+  if (mediaType === "image") return "Image attached";
+  return null;
+}
 
 export default function Knowledge() {
   const { entries } = useLoaderData<typeof loader>();
   const fetcher = useFetcher<typeof action>();
   const videoFetcher = useFetcher<{ videos: VideoFile[] }>();
+  const imageFetcher = useFetcher<{ images: ImageFile[] }>();
+  const productFetcher = useFetcher<{ products: ProductOption[] }>();
   const shopify = useAppBridge();
 
   const [form, setForm] = useState(EMPTY_FORM);
+  const [pickerMode, setPickerMode] = useState<PickerMode>(null);
+  const [productQuery, setProductQuery] = useState("");
   const modalRef = useRef<{ hideOverlay: () => void }>(null);
-  const videoModalRef = useRef<{ hideOverlay: () => void }>(null);
 
   const isSaving = fetcher.state !== "idle";
   const videos = videoFetcher.data?.videos ?? [];
   const isLoadingVideos = videoFetcher.state !== "idle";
+  const images = imageFetcher.data?.images ?? [];
+  const isLoadingImages = imageFetcher.state !== "idle";
+  const products = productFetcher.data?.products ?? [];
+  const isLoadingProducts = productFetcher.state !== "idle";
 
   useEffect(() => {
     if (fetcher.state === "idle" && fetcher.data && "entry" in fetcher.data) {
@@ -111,6 +161,7 @@ export default function Knowledge() {
 
   const openNewEntry = () => {
     setForm(EMPTY_FORM);
+    setPickerMode(null);
   };
 
   const openEditEntry = (entryId: string) => {
@@ -118,12 +169,18 @@ export default function Knowledge() {
     if (!entry) return;
     setForm({
       id: entry.id,
-      question: entry.question,
+      type: entry.type === "product" ? "product" : "freeform",
+      question: entry.question ?? "",
+      productId: entry.productId ?? "",
+      productTitle: entry.productTitle ?? "",
+      productHandle: entry.productHandle ?? "",
       answer: entry.answer,
-      videoId: entry.videoId ?? "",
-      videoUrl: entry.videoUrl ?? "",
-      videoName: entry.videoName ?? "",
+      mediaType: (entry.mediaType as MediaType) ?? "",
+      mediaId: entry.mediaId ?? "",
+      mediaUrl: entry.mediaUrl ?? "",
+      mediaName: entry.mediaName ?? "",
     });
+    setPickerMode(null);
   };
 
   const handleSave = () => {
@@ -142,21 +199,79 @@ export default function Knowledge() {
 
   const openVideoPicker = () => {
     videoFetcher.load("/app/knowledge/videos");
+    setPickerMode("video");
+  };
+
+  const openImagePicker = () => {
+    imageFetcher.load("/app/knowledge/images");
+    setPickerMode("image");
+  };
+
+  const openProductPicker = () => {
+    setProductQuery("");
+    productFetcher.load("/app/knowledge/products?query=");
+    setPickerMode("product");
+  };
+
+  const closePicker = () => {
+    setPickerMode(null);
   };
 
   const selectVideo = (video: VideoFile) => {
     setForm((prev) => ({
       ...prev,
-      videoId: video.id,
-      videoUrl: video.url,
-      videoName: video.filename,
+      mediaType: "video",
+      mediaId: video.id,
+      mediaUrl: video.url,
+      mediaName: video.filename,
     }));
-    videoModalRef.current?.hideOverlay();
+    setPickerMode(null);
   };
 
-  const removeVideo = () => {
-    setForm((prev) => ({ ...prev, videoId: "", videoUrl: "", videoName: "" }));
+  const selectImage = (image: ImageFile) => {
+    setForm((prev) => ({
+      ...prev,
+      mediaType: "image",
+      mediaId: image.id,
+      mediaUrl: image.url,
+      mediaName: image.filename,
+    }));
+    setPickerMode(null);
   };
+
+  const selectProduct = (product: ProductOption) => {
+    setForm((prev) => ({
+      ...prev,
+      productId: product.id,
+      productTitle: product.title,
+      productHandle: product.handle,
+    }));
+    setPickerMode(null);
+  };
+
+  const removeMedia = () => {
+    setForm((prev) => ({
+      ...prev,
+      mediaType: "",
+      mediaId: "",
+      mediaUrl: "",
+      mediaName: "",
+    }));
+  };
+
+  const runProductSearch = (value: string) => {
+    setProductQuery(value);
+    productFetcher.load(`/app/knowledge/products?query=${encodeURIComponent(value)}`);
+  };
+
+  const modalHeading =
+    pickerMode === "video"
+      ? "Select a video"
+      : pickerMode === "image"
+        ? "Select an image"
+        : pickerMode === "product"
+          ? "Select a product"
+          : "Custom question";
 
   return (
     <s-page heading="Knowledge">
@@ -172,10 +287,11 @@ export default function Knowledge() {
         <s-stack direction="block" gap="base">
           <s-paragraph>
             Give the assistant exact answers for questions you want handled a
-            specific way — with an optional video attached, e.g. a how-to
-            clip. When a shopper asks something close to one of these, the
-            assistant uses your answer (and shows the video) instead of
-            guessing.
+            specific way, or attach extra info to a specific product — with
+            an optional video or image, e.g. a how-to clip or size chart.
+            When a shopper asks something close to one of these (or the
+            assistant discusses that product), it uses your answer instead
+            of guessing.
           </s-paragraph>
 
           {entries.length === 0 ? (
@@ -187,12 +303,13 @@ export default function Knowledge() {
               <s-table-header-row>
                 <s-table-header listSlot="primary">Question</s-table-header>
                 <s-table-header listSlot="secondary">Answer</s-table-header>
-                <s-table-header listSlot="inline">Video</s-table-header>
+                <s-table-header listSlot="inline">Media</s-table-header>
                 <s-table-header listSlot="labeled" />
               </s-table-header-row>
               <s-table-body>
                 {entries.map((entry) => {
                   const editLinkId = `edit-${entry.id}`;
+                  const mediaLabel = mediaBadgeLabel(entry.mediaType);
                   return (
                     <s-table-row key={entry.id} clickDelegate={editLinkId}>
                       <s-table-cell>
@@ -202,7 +319,9 @@ export default function Knowledge() {
                           command="--show"
                           onClick={() => openEditEntry(entry.id)}
                         >
-                          {entry.question}
+                          {entry.type === "product"
+                            ? `Product: ${entry.productTitle}`
+                            : entry.question}
                         </s-link>
                       </s-table-cell>
                       <s-table-cell>
@@ -211,8 +330,8 @@ export default function Knowledge() {
                           : entry.answer}
                       </s-table-cell>
                       <s-table-cell>
-                        {entry.videoUrl ? (
-                          <s-badge tone="info">Video attached</s-badge>
+                        {mediaLabel ? (
+                          <s-badge tone="info">{mediaLabel}</s-badge>
                         ) : (
                           <s-text color="subdued">None</s-text>
                         )}
@@ -236,116 +355,218 @@ export default function Knowledge() {
         </s-stack>
       </s-section>
 
-      <s-modal
-        ref={modalRef as any}
-        id="knowledge-modal"
-        heading="Custom question"
-      >
-        <s-stack direction="block" gap="base">
-          <s-text-field
-            label="Question"
-            value={form.question}
-            details="How a shopper might phrase it — the assistant matches similar wording too."
-            onChange={(event: any) => {
-              const value = event.currentTarget.value;
-              setForm((prev) => ({ ...prev, question: value }));
-            }}
-          />
-          <s-text-area
-            label="Answer"
-            value={form.answer}
-            rows={4}
-            onChange={(event: any) => {
-              const value = event.currentTarget.value;
-              setForm((prev) => ({ ...prev, answer: value }));
-            }}
-          />
-
-          {form.videoName ? (
-            <s-stack direction="inline" gap="small-200" alignItems="center">
-              <s-badge tone="info">{form.videoName}</s-badge>
-              <s-button variant="tertiary" onClick={removeVideo}>
-                Remove video
-              </s-button>
+      <s-modal ref={modalRef as any} id="knowledge-modal" heading={modalHeading}>
+        {pickerMode === "video" ? (
+          isLoadingVideos ? (
+            <s-paragraph>Loading videos…</s-paragraph>
+          ) : videos.length === 0 ? (
+            <s-stack direction="block" gap="base">
+              <s-paragraph>
+                No videos found in your store&apos;s media library.
+              </s-paragraph>
+              <s-paragraph tone="neutral" color="subdued">
+                Upload one under Content → Files in Shopify admin, then come
+                back here.
+              </s-paragraph>
             </s-stack>
           ) : (
-            <s-button
-              variant="secondary"
-              commandFor="video-picker-modal"
-              command="--show"
-              onClick={openVideoPicker}
-            >
-              Attach video from Shopify media
-            </s-button>
-          )}
-        </s-stack>
-
-        <s-button
-          slot="secondary-actions"
-          commandFor="knowledge-modal"
-          command="--hide"
-        >
-          Cancel
-        </s-button>
-        <s-button
-          slot="primary-action"
-          variant="primary"
-          onClick={handleSave}
-          {...(isSaving ? { loading: true } : {})}
-        >
-          Save
-        </s-button>
-      </s-modal>
-
-      <s-modal
-        ref={videoModalRef as any}
-        id="video-picker-modal"
-        heading="Select a video"
-      >
-        {isLoadingVideos ? (
-          <s-paragraph>Loading videos…</s-paragraph>
-        ) : videos.length === 0 ? (
-          <s-stack direction="block" gap="base">
-            <s-paragraph>
-              No videos found in your store&apos;s media library.
-            </s-paragraph>
-            <s-paragraph tone="neutral" color="subdued">
-              Upload one under Content → Files in Shopify admin, then come
-              back here.
-            </s-paragraph>
-          </s-stack>
-        ) : (
-          <s-grid gridTemplateColumns="1fr 1fr" gap="base">
-            {videos.map((video) => (
-              <s-clickable
-                key={video.id}
-                padding="base"
-                background="subdued"
-                onClick={() => selectVideo(video)}
-              >
-                <s-stack direction="block" gap="small-200">
-                  {video.thumbnailUrl ? (
+            <s-grid gridTemplateColumns="1fr 1fr" gap="base">
+              {videos.map((video) => (
+                <s-clickable
+                  key={video.id}
+                  padding="base"
+                  background="subdued"
+                  onClick={() => selectVideo(video)}
+                >
+                  <s-stack direction="block" gap="small-200">
+                    {video.thumbnailUrl ? (
+                      <s-image
+                        src={video.thumbnailUrl}
+                        alt={video.filename}
+                        aspectRatio="16/9"
+                        objectFit="cover"
+                      />
+                    ) : null}
+                    <s-text>{video.filename}</s-text>
+                  </s-stack>
+                </s-clickable>
+              ))}
+            </s-grid>
+          )
+        ) : pickerMode === "image" ? (
+          isLoadingImages ? (
+            <s-paragraph>Loading images…</s-paragraph>
+          ) : images.length === 0 ? (
+            <s-stack direction="block" gap="base">
+              <s-paragraph>
+                No images found in your store&apos;s media library.
+              </s-paragraph>
+              <s-paragraph tone="neutral" color="subdued">
+                Upload one under Content → Files in Shopify admin, then come
+                back here.
+              </s-paragraph>
+            </s-stack>
+          ) : (
+            <s-grid gridTemplateColumns="1fr 1fr" gap="base">
+              {images.map((image) => (
+                <s-clickable
+                  key={image.id}
+                  padding="base"
+                  background="subdued"
+                  onClick={() => selectImage(image)}
+                >
+                  <s-stack direction="block" gap="small-200">
                     <s-image
-                      src={video.thumbnailUrl}
-                      alt={video.filename}
+                      src={image.url}
+                      alt={image.filename}
                       aspectRatio="16/9"
                       objectFit="cover"
                     />
-                  ) : null}
-                  <s-text>{video.filename}</s-text>
-                </s-stack>
-              </s-clickable>
-            ))}
-          </s-grid>
+                    <s-text>{image.filename}</s-text>
+                  </s-stack>
+                </s-clickable>
+              ))}
+            </s-grid>
+          )
+        ) : pickerMode === "product" ? (
+          <s-stack direction="block" gap="base">
+            <s-text-field
+              label="Search products"
+              labelAccessibilityVisibility="exclusive"
+              placeholder="Search by product title…"
+              value={productQuery}
+              onChange={(event: any) => runProductSearch(event.currentTarget.value)}
+            />
+            {isLoadingProducts ? (
+              <s-paragraph>Loading products…</s-paragraph>
+            ) : products.length === 0 ? (
+              <s-paragraph tone="neutral" color="subdued">
+                No products found.
+              </s-paragraph>
+            ) : (
+              <s-grid gridTemplateColumns="1fr 1fr" gap="base">
+                {products.map((product) => (
+                  <s-clickable
+                    key={product.id}
+                    padding="base"
+                    background="subdued"
+                    onClick={() => selectProduct(product)}
+                  >
+                    <s-stack direction="block" gap="small-200">
+                      {product.imageUrl ? (
+                        <s-image
+                          src={product.imageUrl}
+                          alt={product.title}
+                          aspectRatio="16/9"
+                          objectFit="cover"
+                        />
+                      ) : null}
+                      <s-text>{product.title}</s-text>
+                    </s-stack>
+                  </s-clickable>
+                ))}
+              </s-grid>
+            )}
+          </s-stack>
+        ) : (
+          <s-stack direction="block" gap="base">
+            <s-stack direction="block" gap="small-200">
+              <s-text color="subdued">Question type</s-text>
+              <s-stack direction="inline" gap="small-200">
+                <s-button
+                  variant={form.type === "freeform" ? "primary" : "secondary"}
+                  onClick={() => setForm((prev) => ({ ...prev, type: "freeform" }))}
+                >
+                  Free-form question
+                </s-button>
+                <s-button
+                  variant={form.type === "product" ? "primary" : "secondary"}
+                  onClick={() => setForm((prev) => ({ ...prev, type: "product" }))}
+                >
+                  Specific product
+                </s-button>
+              </s-stack>
+            </s-stack>
+
+            {form.type === "freeform" ? (
+              <s-text-field
+                label="Question"
+                value={form.question}
+                details="How a shopper might phrase it — the assistant matches similar wording too."
+                onChange={(event: any) => {
+                  const value = event.currentTarget.value;
+                  setForm((prev) => ({ ...prev, question: value }));
+                }}
+              />
+            ) : form.productTitle ? (
+              <s-stack direction="inline" gap="small-200" alignItems="center">
+                <s-badge tone="info">{form.productTitle}</s-badge>
+                <s-button variant="tertiary" onClick={openProductPicker}>
+                  Change product
+                </s-button>
+              </s-stack>
+            ) : (
+              <s-button variant="secondary" onClick={openProductPicker}>
+                Select product
+              </s-button>
+            )}
+
+            <s-text-area
+              label="Answer"
+              value={form.answer}
+              rows={4}
+              onChange={(event: any) => {
+                const value = event.currentTarget.value;
+                setForm((prev) => ({ ...prev, answer: value }));
+              }}
+            />
+
+            {form.mediaName ? (
+              <s-stack direction="inline" gap="small-200" alignItems="center">
+                <s-badge tone="info">
+                  {form.mediaType === "image" ? "Image: " : "Video: "}
+                  {form.mediaName}
+                </s-badge>
+                <s-button variant="tertiary" onClick={removeMedia}>
+                  Remove
+                </s-button>
+              </s-stack>
+            ) : (
+              <s-stack direction="inline" gap="small-200">
+                <s-button variant="secondary" onClick={openVideoPicker}>
+                  Attach video
+                </s-button>
+                <s-button variant="secondary" onClick={openImagePicker}>
+                  Attach image
+                </s-button>
+              </s-stack>
+            )}
+          </s-stack>
         )}
 
-        <s-button
-          slot="secondary-actions"
-          commandFor="video-picker-modal"
-          command="--hide"
-        >
-          Close
-        </s-button>
+        {pickerMode ? (
+          <s-button slot="secondary-actions" onClick={closePicker}>
+            Back
+          </s-button>
+        ) : (
+          <>
+            <s-button
+              slot="secondary-actions"
+              commandFor="knowledge-modal"
+              command="--hide"
+            >
+              Cancel
+            </s-button>
+            <s-button
+              slot="primary-action"
+              variant="primary"
+              onClick={handleSave}
+              {...(isSaving ? { loading: true } : {})}
+            >
+              Save
+            </s-button>
+          </>
+        )}
       </s-modal>
     </s-page>
   );
@@ -354,4 +575,3 @@ export default function Knowledge() {
 export const headers: HeadersFunction = (headersArgs) => {
   return boundary.headers(headersArgs);
 };
-

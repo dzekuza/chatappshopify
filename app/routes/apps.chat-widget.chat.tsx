@@ -41,6 +41,22 @@ const ORDER_TOOL_INSTRUCTION =
   "up that order with the contact details on file and offer to connect them " +
   "with a human, rather than guessing or asking them to repeat sensitive info.";
 
+const PERSONALIZATION_TOOL_INSTRUCTION =
+  "Use the getPurchaseHistory tool when it would help tailor a recommendation " +
+  "— e.g. the shopper asks what to get, mentions liking something they " +
+  "already own, or asks for something similar to a past order. Weave past " +
+  "purchases into the recommendation naturally (e.g. 'since you bought X, " +
+  "you might like Y') instead of just listing their order history back to " +
+  "them. If it returns no history, just recommend normally without " +
+  "mentioning the lookup.";
+
+const HANDOFF_TOOL_INSTRUCTION =
+  "If the shopper asks to speak with a human, a real person, or store staff " +
+  "— or seems frustrated and asks for escalation — call the " +
+  "requestHumanHandoff tool once, then let them know a team member has been " +
+  "notified and will follow up, while still offering to keep helping in the " +
+  "meantime.";
+
 function normalizePhone(value: string | null | undefined) {
   return (value ?? "").replace(/\D/g, "").slice(-9);
 }
@@ -73,25 +89,65 @@ function buildProductQuery(keywords: string | undefined, collectionFilter: strin
   return [keywords?.trim(), collectionFilter].filter(Boolean).join(" AND ");
 }
 
-type KnowledgeQA = { question: string; answer: string; videoUrl: string | null };
+type KnowledgeEntryRow = {
+  type: string;
+  question: string | null;
+  answer: string;
+  productTitle: string | null;
+  productHandle: string | null;
+  mediaType: string | null;
+  mediaUrl: string | null;
+};
 
-function knowledgeBasePrompt(entries: KnowledgeQA[]) {
-  if (entries.length === 0) return "";
-  const items = entries
-    .map((e, i) => {
-      const videoLine = e.videoUrl ? `\nVideo: ${e.videoUrl}` : "";
-      return `${i + 1}. Q: ${e.question}\nA: ${e.answer}${videoLine}`;
-    })
-    .join("\n\n");
-  return (
-    "You have the following store-specific FAQ entries. If the shopper's " +
-    "question matches one of these — even if worded differently — reply " +
-    "using that answer (light rewording for tone is fine, but keep the " +
-    "facts exactly as given). If an entry has a Video line, include that " +
-    "exact URL on its own line at the end of your reply so it can be shown " +
-    "to the shopper. Don't use these answers for unrelated questions.\n\n" +
-    items
-  );
+function mediaLine(entry: KnowledgeEntryRow) {
+  if (!entry.mediaUrl) return "";
+  const label = entry.mediaType === "image" ? "Image" : "Video";
+  return `\n${label}: ${entry.mediaUrl}`;
+}
+
+function knowledgeBasePrompt(entries: KnowledgeEntryRow[]) {
+  const freeform = entries.filter((e) => e.type !== "product");
+  const productNotes = entries.filter((e) => e.type === "product");
+  const sections: string[] = [];
+
+  if (freeform.length > 0) {
+    const items = freeform
+      .map((e, i) => `${i + 1}. Q: ${e.question}\nA: ${e.answer}${mediaLine(e)}`)
+      .join("\n\n");
+    sections.push(
+      "You have the following store-specific FAQ entries. If the shopper's " +
+        "question matches one of these — even if worded differently — reply " +
+        "using that answer (light rewording for tone is fine, but keep the " +
+        "facts exactly as given). If an entry has an Image or Video line, " +
+        "include just the bare URL on its own line at the end of your reply " +
+        "— no 'Image:'/'Video:' label, just the URL by itself — so it can " +
+        "be shown to the shopper. Don't use these answers for unrelated " +
+        "questions.\n\n" +
+        items,
+    );
+  }
+
+  if (productNotes.length > 0) {
+    const items = productNotes
+      .map(
+        (e, i) =>
+          `${i + 1}. Product: ${e.productTitle}\nNote: ${e.answer}${mediaLine(e)}`,
+      )
+      .join("\n\n");
+    sections.push(
+      "You have the following merchant-added notes tied to specific " +
+        "products. Whenever you recommend or discuss one of these products " +
+        "by name, weave its note in naturally alongside the live product " +
+        "data from searchProducts — don't just recite it verbatim. If a " +
+        "note has an Image or Video line, include just the bare URL on its " +
+        "own line — no 'Image:'/'Video:' label, just the URL by itself. " +
+        "Don't mention a note for a product the shopper isn't asking " +
+        "about.\n\n" +
+        items,
+    );
+  }
+
+  return sections.join("\n\n");
 }
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -211,6 +267,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       languageInstruction(settings.language),
       knowledgeBasePrompt(knowledgeEntries),
       ORDER_TOOL_INSTRUCTION,
+      PERSONALIZATION_TOOL_INSTRUCTION,
+      HANDOFF_TOOL_INSTRUCTION,
     ]
       .filter(Boolean)
       .join("\n\n"),
@@ -374,6 +432,62 @@ export const action = async ({ request }: ActionFunctionArgs) => {
               ),
             },
           };
+        },
+      }),
+      getPurchaseHistory: tool({
+        description:
+          "Get this shopper's past orders (product titles they've bought before) to personalize a recommendation. Only works if they gave an email when starting the chat.",
+        inputSchema: z.object({}),
+        execute: async () => {
+          const email = conversationContact?.customerEmail;
+          if (!email) {
+            return { available: false, reason: "no_email_on_file" };
+          }
+
+          const response = await admin.graphql(
+            `#graphql
+              query PastOrders($query: String!) {
+                orders(first: 5, sortKey: CREATED_AT, reverse: true, query: $query) {
+                  nodes {
+                    createdAt
+                    lineItems(first: 10) {
+                      nodes {
+                        title
+                      }
+                    }
+                  }
+                }
+              }`,
+            { variables: { query: `email:"${email.replace(/"/g, "")}"` } },
+          );
+          const json = await response.json();
+          const orders = json?.data?.orders?.nodes ?? [];
+
+          return {
+            available: true,
+            pastPurchases: orders.flatMap((o: Record<string, unknown>) =>
+              ((o.lineItems as any)?.nodes ?? []).map(
+                (li: Record<string, unknown>) => li.title,
+              ),
+            ),
+          };
+        },
+      }),
+      requestHumanHandoff: tool({
+        description:
+          "Flag this conversation so a staff member follows up, because the shopper asked for a human. Call this once when they first ask.",
+        inputSchema: z.object({
+          reason: z
+            .string()
+            .optional()
+            .describe("Short note on why they want a human, e.g. 'wants a refund'"),
+        }),
+        execute: async ({ reason }) => {
+          await prisma.conversation.update({
+            where: { shop_conversationId: { shop: session.shop, conversationId } },
+            data: { needsHuman: true, needsHumanRequestedAt: new Date() },
+          });
+          return { requested: true, reason: reason ?? null };
         },
       }),
     },

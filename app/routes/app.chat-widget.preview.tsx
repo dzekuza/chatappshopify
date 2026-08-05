@@ -39,6 +39,13 @@ const ORDER_TOOL_INSTRUCTION =
   "fulfillment, or tracking. Only ever share the details it returns — if it " +
   "reports the order could not be found, say so rather than guessing.";
 
+const HANDOFF_TOOL_INSTRUCTION =
+  "If the shopper asks to speak with a human, a real person, or store staff " +
+  "— or seems frustrated and asks for escalation — call the " +
+  "requestHumanHandoff tool once, then let them know a team member has been " +
+  "notified and will follow up, while still offering to keep helping in the " +
+  "meantime.";
+
 function normalizeOrderNumber(value: string) {
   const digits = value.replace(/\D/g, "");
   return digits ? `#${digits}` : "";
@@ -64,25 +71,65 @@ function buildProductQuery(keywords: string | undefined, collectionFilter: strin
   return [keywords?.trim(), collectionFilter].filter(Boolean).join(" AND ");
 }
 
-type KnowledgeQA = { question: string; answer: string; videoUrl: string | null };
+type KnowledgeEntryRow = {
+  type: string;
+  question: string | null;
+  answer: string;
+  productTitle: string | null;
+  productHandle: string | null;
+  mediaType: string | null;
+  mediaUrl: string | null;
+};
 
-function knowledgeBasePrompt(entries: KnowledgeQA[]) {
-  if (entries.length === 0) return "";
-  const items = entries
-    .map((e, i) => {
-      const videoLine = e.videoUrl ? `\nVideo: ${e.videoUrl}` : "";
-      return `${i + 1}. Q: ${e.question}\nA: ${e.answer}${videoLine}`;
-    })
-    .join("\n\n");
-  return (
-    "You have the following store-specific FAQ entries. If the shopper's " +
-    "question matches one of these — even if worded differently — reply " +
-    "using that answer (light rewording for tone is fine, but keep the " +
-    "facts exactly as given). If an entry has a Video line, include that " +
-    "exact URL on its own line at the end of your reply so it can be shown " +
-    "to the shopper. Don't use these answers for unrelated questions.\n\n" +
-    items
-  );
+function mediaLine(entry: KnowledgeEntryRow) {
+  if (!entry.mediaUrl) return "";
+  const label = entry.mediaType === "image" ? "Image" : "Video";
+  return `\n${label}: ${entry.mediaUrl}`;
+}
+
+function knowledgeBasePrompt(entries: KnowledgeEntryRow[]) {
+  const freeform = entries.filter((e) => e.type !== "product");
+  const productNotes = entries.filter((e) => e.type === "product");
+  const sections: string[] = [];
+
+  if (freeform.length > 0) {
+    const items = freeform
+      .map((e, i) => `${i + 1}. Q: ${e.question}\nA: ${e.answer}${mediaLine(e)}`)
+      .join("\n\n");
+    sections.push(
+      "You have the following store-specific FAQ entries. If the shopper's " +
+        "question matches one of these — even if worded differently — reply " +
+        "using that answer (light rewording for tone is fine, but keep the " +
+        "facts exactly as given). If an entry has an Image or Video line, " +
+        "include just the bare URL on its own line at the end of your reply " +
+        "— no 'Image:'/'Video:' label, just the URL by itself — so it can " +
+        "be shown to the shopper. Don't use these answers for unrelated " +
+        "questions.\n\n" +
+        items,
+    );
+  }
+
+  if (productNotes.length > 0) {
+    const items = productNotes
+      .map(
+        (e, i) =>
+          `${i + 1}. Product: ${e.productTitle}\nNote: ${e.answer}${mediaLine(e)}`,
+      )
+      .join("\n\n");
+    sections.push(
+      "You have the following merchant-added notes tied to specific " +
+        "products. Whenever you recommend or discuss one of these products " +
+        "by name, weave its note in naturally alongside the live product " +
+        "data from searchProducts — don't just recite it verbatim. If a " +
+        "note has an Image or Video line, include just the bare URL on its " +
+        "own line — no 'Image:'/'Video:' label, just the URL by itself. " +
+        "Don't mention a note for a product the shopper isn't asking " +
+        "about.\n\n" +
+        items,
+    );
+  }
+
+  return sections.join("\n\n");
 }
 
 // Lets a merchant try out the assistant from inside the admin, using
@@ -140,6 +187,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       languageInstruction(language),
       knowledgeBasePrompt(knowledgeEntries),
       ORDER_TOOL_INSTRUCTION,
+      HANDOFF_TOOL_INSTRUCTION,
     ]
       .filter(Boolean)
       .join("\n\n"),
@@ -269,6 +317,22 @@ export const action = async ({ request }: ActionFunctionArgs) => {
               ),
             },
           };
+        },
+      }),
+      // No getPurchaseHistory tool here: the preview has no verified shopper
+      // identity to look up (see file header) so there's nothing to
+      // personalize against.
+      requestHumanHandoff: tool({
+        description:
+          "Simulate flagging this conversation for staff follow-up, because the shopper asked for a human. This is the admin preview, so nothing is actually persisted or notified.",
+        inputSchema: z.object({
+          reason: z
+            .string()
+            .optional()
+            .describe("Short note on why they want a human, e.g. 'wants a refund'"),
+        }),
+        execute: async ({ reason }) => {
+          return { requested: true, reason: reason ?? null, preview: true };
         },
       }),
     },
