@@ -5,6 +5,7 @@
   var chatEndpoint = root.dataset.chatEndpoint;
   var settingsEndpoint = root.dataset.settingsEndpoint;
   var messagesEndpoint = root.dataset.messagesEndpoint;
+  var historyEndpoint = root.dataset.historyEndpoint;
   var history = [];
   var lastAgentMessageAt = new Date(0).toISOString();
   var agentPollTimer = null;
@@ -228,6 +229,38 @@
     }
 
     updateEmptyState();
+
+    // A page reload keeps the same conversationId (sessionStorage) and the
+    // backend already has every message, but the rendered chat + in-memory
+    // `history` used for AI context were never persisted client-side — so
+    // without this, reloading mid-chat silently looked like it started over.
+    function restoreHistory() {
+      if (!historyEndpoint || !contact) return;
+      fetch(
+        historyEndpoint +
+          "?conversationId=" +
+          encodeURIComponent(conversationId),
+      )
+        .then(function (res) {
+          return res.ok ? res.json() : null;
+        })
+        .then(function (data) {
+          var incoming = (data && data.messages) || [];
+          incoming.forEach(function (m) {
+            if (m.role === "user" || m.role === "assistant") {
+              appendMessage(m.role, m.content);
+              history.push({ role: m.role, content: m.content });
+            } else if (m.role === "agent") {
+              appendMessage("agent", m.content);
+              history.push({ role: "assistant", content: m.content });
+              lastAgentMessageAt = m.createdAt;
+            }
+          });
+        })
+        .catch(function () {});
+    }
+
+    restoreHistory();
 
     function pollForAgentReplies() {
       if (!messagesEndpoint || !contact) return;

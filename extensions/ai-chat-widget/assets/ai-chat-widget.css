@@ -1,11 +1,32 @@
 #ai-chat-widget-root {
   --aicw-color: #1a1a1a;
   --aicw-color-contrast: #ffffff;
+  --aicw-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   position: fixed;
   z-index: 2147483000;
   bottom: 20px;
   right: 20px;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--aicw-font-family);
+}
+
+/* Themes commonly set font-family directly on p/button/input/textarea (and
+   form controls never inherit font-family from an ancestor by default in
+   the browser's own UA stylesheet), which otherwise overrides the
+   inherited value from #ai-chat-widget-root above. Force it explicitly on
+   every element so the widget can't pick up the theme's font. */
+#ai-chat-widget-root,
+#ai-chat-widget-root * {
+  font-family: var(--aicw-font-family);
+}
+
+/* Many themes apply a global *:focus-visible outline/box-shadow built from
+   theme color variables (e.g. --color-foreground) that don't necessarily
+   resolve sensibly inside the widget. Override with the widget's own
+   focus style instead of inheriting the theme's. */
+#ai-chat-widget-root :focus-visible {
+  outline: 2px solid var(--aicw-color);
+  outline-offset: 2px;
+  box-shadow: none;
 }
 
 #ai-chat-widget-root.aicw-position-bottom-left {
