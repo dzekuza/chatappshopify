@@ -29,6 +29,13 @@
   left: 20px;
 }
 
+.previewBubbleIcon {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  object-fit: cover;
+}
+
 .previewPanel {
   position: absolute;
   bottom: 88px;

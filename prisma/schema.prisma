@@ -45,6 +45,7 @@ model WidgetSettings {
   welcomeMessage  String   @default("Hi! How can I help you find what you're looking for?")
   systemPrompt    String   @default("You are a friendly, concise shopping assistant for this store. Use the product lookup tool to answer questions about products, pricing, and availability. Never invent products or prices.")
   primaryColor    String   @default("#1a1a1a")
+  iconUrl         String?
   position        String   @default("bottom-right")
   geminiModel     String   @default("gemini-2.5-flash")
   language        String   @default("auto")

@@ -71,6 +71,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const welcomeMessage = String(payload.welcomeMessage ?? "").trim();
   const systemPrompt = String(payload.systemPrompt ?? "").trim();
   const primaryColor = String(payload.primaryColor ?? "").trim();
+  const iconUrl = String(payload.iconUrl ?? "").trim() || null;
   const position = String(payload.position ?? "bottom-right");
   const geminiModel = String(payload.geminiModel ?? "gemini-2.5-flash");
   const language = LANGUAGES.some((l) => l.value === payload.language)
@@ -100,6 +101,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       welcomeMessage,
       systemPrompt,
       primaryColor,
+      iconUrl,
       position,
       geminiModel,
       language,
@@ -111,6 +113,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       welcomeMessage,
       systemPrompt,
       primaryColor,
+      iconUrl,
       position,
       geminiModel,
       language,
@@ -178,7 +181,10 @@ function EmptyChatIcon() {
   );
 }
 
-function BubbleIcon() {
+function BubbleIcon({ iconUrl }: { iconUrl?: string | null }) {
+  if (iconUrl) {
+    return <img src={iconUrl} alt="" className={styles.previewBubbleIcon} />;
+  }
   return (
     <svg viewBox="0 0 24 24" fill="none" width="26" height="26" aria-hidden="true">
       <path
@@ -330,6 +336,8 @@ export default function Index() {
   const [form, setForm] = useState(settings);
   const isSaving = fetcher.state !== "idle";
   const [isSyncingCollections, setIsSyncingCollections] = useState(false);
+  const [isUploadingIcon, setIsUploadingIcon] = useState(false);
+  const [iconUploadError, setIconUploadError] = useState<string | null>(null);
 
   const knowledgeCollections: KnowledgeCollection[] = Array.isArray(
     form.knowledgeCollections,
@@ -466,6 +474,34 @@ export default function Index() {
     );
   };
 
+  const uploadIcon = async (file: File) => {
+    setIconUploadError(null);
+    setIsUploadingIcon(true);
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      const response = await fetch("/app/chat-widget/icon-upload", {
+        method: "POST",
+        body,
+      });
+      const data = await response.json();
+      if (!response.ok || data.error) {
+        setIconUploadError(data.error || "Could not upload icon.");
+        return;
+      }
+      update("iconUrl", data.url as typeof form.iconUrl);
+    } catch (err) {
+      setIconUploadError("Could not upload icon.");
+    } finally {
+      setIsUploadingIcon(false);
+    }
+  };
+
+  const removeIcon = () => {
+    setIconUploadError(null);
+    update("iconUrl", null as unknown as typeof form.iconUrl);
+  };
+
   const handleSave = () => {
     fetcher.submit(JSON.stringify(form), {
       method: "POST",
@@ -525,6 +561,46 @@ export default function Index() {
               update("primaryColor", event.currentTarget.value)
             }
           />
+          <s-stack direction="block" gap="small-200">
+            <s-text color="subdued">Launcher icon</s-text>
+            {form.iconUrl ? (
+              <s-stack direction="inline" gap="small-200" alignItems="center">
+                <s-thumbnail src={form.iconUrl} alt="Widget icon" size="small" />
+                <s-button
+                  variant="tertiary"
+                  tone="critical"
+                  onClick={removeIcon}
+                  {...(isUploadingIcon ? { disabled: true } : {})}
+                >
+                  Remove icon
+                </s-button>
+              </s-stack>
+            ) : (
+              <s-drop-zone
+                accept="image/*"
+                label="Upload icon"
+                accessibilityLabel="Upload a custom launcher icon"
+                {...(isUploadingIcon ? { disabled: true } : {})}
+                onChange={(event: any) => {
+                  const file = event.currentTarget.files?.[0];
+                  if (file instanceof File) uploadIcon(file);
+                }}
+              />
+            )}
+            {isUploadingIcon ? (
+              <s-paragraph tone="neutral" color="subdued">
+                Uploading…
+              </s-paragraph>
+            ) : null}
+            {iconUploadError ? (
+              <s-paragraph tone="critical">{iconUploadError}</s-paragraph>
+            ) : (
+              <s-paragraph tone="neutral" color="subdued">
+                Replaces the default chat-bubble icon on the launcher button.
+                PNG or SVG recommended, up to 2MB.
+              </s-paragraph>
+            )}
+          </s-stack>
           <s-select
             label="Position"
             value={form.position}
@@ -753,7 +829,7 @@ export default function Index() {
               onClick={() => setIsPreviewOpen((open) => !open)}
               aria-label={isPreviewOpen ? "Close chat" : "Open chat"}
             >
-              <BubbleIcon />
+              <BubbleIcon iconUrl={form.iconUrl} />
             </button>
           </div>
           <p className={styles.previewFooter}>

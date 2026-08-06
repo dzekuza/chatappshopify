@@ -298,62 +298,70 @@ export default function Knowledge() {
             <s-paragraph tone="neutral" color="subdued">
               No custom questions yet.
             </s-paragraph>
-          ) : (
-            <s-table variant="auto">
-              <s-table-header-row>
-                <s-table-header listSlot="primary">Question</s-table-header>
-                <s-table-header listSlot="secondary">Answer</s-table-header>
-                <s-table-header listSlot="inline">Media</s-table-header>
-                <s-table-header listSlot="labeled" />
-              </s-table-header-row>
-              <s-table-body>
-                {entries.map((entry) => {
-                  const editLinkId = `edit-${entry.id}`;
-                  const mediaLabel = mediaBadgeLabel(entry.mediaType);
-                  return (
-                    <s-table-row key={entry.id} clickDelegate={editLinkId}>
-                      <s-table-cell>
-                        <s-link
-                          id={editLinkId}
-                          commandFor="knowledge-modal"
-                          command="--show"
-                          onClick={() => openEditEntry(entry.id)}
-                        >
-                          {entry.type === "product"
-                            ? `Product: ${entry.productTitle}`
-                            : entry.question}
-                        </s-link>
-                      </s-table-cell>
-                      <s-table-cell>
-                        {entry.answer.length > 100
-                          ? `${entry.answer.slice(0, 100)}…`
-                          : entry.answer}
-                      </s-table-cell>
-                      <s-table-cell>
-                        {mediaLabel ? (
-                          <s-badge tone="info">{mediaLabel}</s-badge>
-                        ) : (
-                          <s-text color="subdued">None</s-text>
-                        )}
-                      </s-table-cell>
-                      <s-table-cell>
-                        <s-button
-                          variant="tertiary"
-                          tone="critical"
-                          {...(isSaving ? { loading: true } : {})}
-                          onClick={() => handleDelete(entry.id)}
-                        >
-                          Delete
-                        </s-button>
-                      </s-table-cell>
-                    </s-table-row>
-                  );
-                })}
-              </s-table-body>
-            </s-table>
-          )}
+          ) : null}
         </s-stack>
       </s-section>
+
+      {entries.length > 0 ? (
+        <s-section padding="none">
+          <s-table variant="auto">
+            <s-table-header-row>
+              <s-table-header listSlot="primary">Question</s-table-header>
+              <s-table-header listSlot="secondary">Answer</s-table-header>
+              <s-table-header listSlot="inline">Media</s-table-header>
+              <s-table-header listSlot="labeled" />
+            </s-table-header-row>
+            <s-table-body>
+              {entries.map((entry) => {
+                const editLinkId = `edit-${entry.id}`;
+                const mediaLabel = mediaBadgeLabel(entry.mediaType);
+                return (
+                  <s-table-row key={entry.id} clickDelegate={editLinkId}>
+                    <s-table-cell>
+                      <s-link
+                        id={editLinkId}
+                        commandFor="knowledge-modal"
+                        command="--show"
+                        onClick={() => openEditEntry(entry.id)}
+                      >
+                        {entry.type === "product"
+                          ? `Product: ${entry.productTitle}`
+                          : entry.question}
+                      </s-link>
+                    </s-table-cell>
+                    <s-table-cell>
+                      {entry.answer.length > 100
+                        ? `${entry.answer.slice(0, 100)}…`
+                        : entry.answer}
+                    </s-table-cell>
+                    <s-table-cell>
+                      {mediaLabel ? (
+                        <s-badge tone="info">{mediaLabel}</s-badge>
+                      ) : (
+                        <s-text color="subdued">None</s-text>
+                      )}
+                    </s-table-cell>
+                    <s-table-cell>
+                      <s-button
+                        variant="tertiary"
+                        tone="critical"
+                        icon="delete"
+                        accessibilityLabel={`Delete "${
+                          entry.type === "product"
+                            ? entry.productTitle
+                            : entry.question
+                        }"`}
+                        {...(isSaving ? { loading: true } : {})}
+                        onClick={() => handleDelete(entry.id)}
+                      />
+                    </s-table-cell>
+                  </s-table-row>
+                );
+              })}
+            </s-table-body>
+          </s-table>
+        </s-section>
+      ) : null}
 
       <s-modal ref={modalRef as any} id="knowledge-modal" heading={modalHeading}>
         {pickerMode === "video" ? (

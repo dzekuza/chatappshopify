@@ -22,5 +22,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     welcomeMessage: settings.welcomeMessage,
     primaryColor: settings.primaryColor,
     position: settings.position,
+    iconUrl: settings.iconUrl,
   });
 };

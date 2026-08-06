@@ -67,7 +67,14 @@
     return div.innerHTML;
   }
 
-  function bubbleIcon() {
+  function bubbleIcon(settings) {
+    if (settings && settings.iconUrl) {
+      return (
+        '<img class="aicw-bubble-icon" src="' +
+        escapeHtml(settings.iconUrl) +
+        '" alt="" />'
+      );
+    }
     return (
       '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">' +
       '<path d="M4 4h16v12H7l-3 3V4z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>' +
@@ -144,7 +151,7 @@
 
     root.innerHTML =
       '<button type="button" class="aicw-bubble" aria-label="Open chat">' +
-      bubbleIcon() +
+      bubbleIcon(settings) +
       "</button>" +
       '<div class="aicw-panel' +
       (contact ? "" : " aicw-show-gate") +
@@ -529,6 +536,13 @@
       return el;
     }
 
+    function autoResizeInput() {
+      input.style.height = "auto";
+      input.style.height = Math.min(input.scrollHeight, 100) + "px";
+    }
+
+    input.addEventListener("input", autoResizeInput);
+
     input.addEventListener("keydown", function (event) {
       if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
@@ -542,6 +556,7 @@
       if (!text) return;
 
       input.value = "";
+      autoResizeInput();
       sendBtn.disabled = true;
       scrollToBottom(false);
       appendMessage("user", text);

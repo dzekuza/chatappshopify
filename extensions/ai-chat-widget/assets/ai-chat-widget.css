@@ -61,6 +61,13 @@
   height: 26px;
 }
 
+.aicw-bubble-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  object-fit: cover;
+}
+
 .aicw-panel {
   position: absolute;
   bottom: 72px;
@@ -409,7 +416,8 @@
   color: #1a1a1a;
   resize: none;
   min-height: 20px;
-  max-height: 80px;
+  max-height: 100px;
+  overflow-y: auto;
 }
 
 .aicw-input::placeholder {
