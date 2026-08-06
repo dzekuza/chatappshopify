@@ -29,6 +29,14 @@
   box-shadow: none;
 }
 
+/* The message input sits inside its own bordered pill (.aicw-form), so it
+   doesn't need — and shouldn't show — the widget-wide focus outline above. */
+#ai-chat-widget-root .aicw-input:focus-visible {
+  outline: none;
+  border: none;
+  box-shadow: none;
+}
+
 #ai-chat-widget-root.aicw-position-bottom-left {
   right: auto;
   left: 20px;
