@@ -254,7 +254,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       where: { shop_conversationId: { shop: session.shop, conversationId } },
     }));
 
-  const google = createGoogleGenerativeAI({ apiKey: process.env.GEMINI_API_KEY });
+  const google = createGoogleGenerativeAI({
+    apiKey: settings.geminiApiKey || process.env.GEMINI_API_KEY,
+  });
   const collectionFilter = collectionIdFilter(settings.knowledgeCollections);
   const knowledgeEntries = await prisma.knowledgeEntry.findMany({
     where: { shop: session.shop },

@@ -7,7 +7,7 @@ import type {
 import { useFetcher, useLoaderData } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
-import { authenticate } from "../shopify.server";
+import { authenticate, MONTHLY_PLAN, PRO_PLAN } from "../shopify.server";
 import prisma from "../db.server";
 import styles from "../styles/chat-widget-preview.module.css";
 
@@ -49,7 +49,7 @@ const THEME_EXTENSION_UID = "45c51f62-01cb-9718-b977-78f5108db8351ae77f7a";
 const THEME_BLOCK_HANDLE = "chat_widget";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { session, billing } = await authenticate.admin(request);
 
   const settings = await prisma.widgetSettings.upsert({
     where: { shop: session.shop },
@@ -57,15 +57,25 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     create: { shop: session.shop },
   });
 
+  const { appSubscriptions } = await billing.check({
+    plans: [MONTHLY_PLAN, PRO_PLAN],
+  });
+  const isProPlan = appSubscriptions.some((sub) => sub.name === PRO_PLAN);
+
   const addToThemeUrl = `https://${session.shop}/admin/themes/current/editor?context=apps&activateAppId=${THEME_EXTENSION_UID}/${THEME_BLOCK_HANDLE}`;
   const shopName = session.shop.replace(/\.myshopify\.com$/, "");
 
-  return { settings, addToThemeUrl, shopName };
+  return { settings, addToThemeUrl, shopName, isProPlan };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { session, billing } = await authenticate.admin(request);
   const payload = await request.json();
+
+  const { appSubscriptions } = await billing.check({
+    plans: [MONTHLY_PLAN, PRO_PLAN],
+  });
+  const isProPlan = appSubscriptions.some((sub) => sub.name === PRO_PLAN);
 
   const enabled = Boolean(payload.enabled);
   const welcomeMessage = String(payload.welcomeMessage ?? "").trim();
@@ -74,6 +84,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const iconUrl = String(payload.iconUrl ?? "").trim() || null;
   const position = String(payload.position ?? "bottom-right");
   const geminiModel = String(payload.geminiModel ?? "gemini-2.5-flash");
+  // Bring-your-own API key is a Pro plan feature — silently ignore it for
+  // other plans rather than trusting the client-side gate.
+  const geminiApiKey = isProPlan
+    ? String(payload.geminiApiKey ?? "").trim() || null
+    : null;
   const language = LANGUAGES.some((l) => l.value === payload.language)
     ? String(payload.language)
     : "auto";
@@ -104,6 +119,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       iconUrl,
       position,
       geminiModel,
+      geminiApiKey,
       language,
       knowledgeCollections,
     },
@@ -116,6 +132,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       iconUrl,
       position,
       geminiModel,
+      geminiApiKey,
       language,
       knowledgeCollections,
     },
@@ -329,7 +346,8 @@ function renderMessageBody(content: string) {
 }
 
 export default function Index() {
-  const { settings, addToThemeUrl, shopName } = useLoaderData<typeof loader>();
+  const { settings, addToThemeUrl, shopName, isProPlan } =
+    useLoaderData<typeof loader>();
   const fetcher = useFetcher<typeof action>();
   const shopify = useAppBridge();
 
@@ -646,6 +664,26 @@ export default function Index() {
               </s-option>
             ))}
           </s-select>
+          {isProPlan ? (
+            <s-text-field
+              label="Your own Gemini API key (Pro plan)"
+              details="Requests use your own Gemini quota instead of the app's shared key. Leave blank to fall back to the shared key."
+              value={form.geminiApiKey ?? ""}
+              onChange={(event: any) =>
+                update("geminiApiKey", event.currentTarget.value)
+              }
+            />
+          ) : (
+            <s-banner tone="info" heading="Bring your own Gemini API key">
+              <s-paragraph>
+                Upgrade to the Pro plan to use your own Gemini API key instead
+                of the app's shared key.
+              </s-paragraph>
+              <s-button slot="secondary-actions" href="/app/plans">
+                View plans
+              </s-button>
+            </s-banner>
+          )}
         </s-stack>
       </s-section>
 

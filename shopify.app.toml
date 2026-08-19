@@ -16,6 +16,9 @@ prefix = "apps"
 
 [webhooks]
 api_version = "2026-10"
+customers_data_request_url = "/webhooks/customers/data_request"
+customers_redact_url = "/webhooks/customers/redact"
+shop_redact_url = "/webhooks/shop/redact"
 
   [[webhooks.subscriptions]]
   uri = "/webhooks/app/uninstalled"

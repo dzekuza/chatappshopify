@@ -142,7 +142,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   const { session, admin } = await authenticate.admin(request);
 
-  if (!process.env.GEMINI_API_KEY) {
+  const shopSettings = await prisma.widgetSettings.findUnique({
+    where: { shop: session.shop },
+    select: { geminiApiKey: true },
+  });
+  const apiKey = shopSettings?.geminiApiKey || process.env.GEMINI_API_KEY;
+
+  if (!apiKey) {
     return new Response("AI is not configured for this store", {
       status: 503,
     });
@@ -178,7 +184,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     where: { shop: session.shop },
   });
 
-  const google = createGoogleGenerativeAI({ apiKey: process.env.GEMINI_API_KEY });
+  const google = createGoogleGenerativeAI({ apiKey });
 
   const result = streamText({
     model: google(geminiModel),
