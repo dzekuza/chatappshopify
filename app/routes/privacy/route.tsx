@@ -1,7 +1,7 @@
 import styles from "./styles.module.css";
 
 const LAST_UPDATED = "August 20, 2026";
-const SUPPORT_EMAIL = "dzekuza@gmail.com";
+const SUPPORT_EMAIL = "info@gvozdovic.com";
 
 export default function Privacy() {
   return (
