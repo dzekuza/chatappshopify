@@ -1,17 +1,31 @@
 import type { ActionFunctionArgs } from "react-router";
 import { useFetcher } from "react-router";
-import { authenticate, MONTHLY_PLAN, PRO_PLAN } from "../shopify.server";
+import {
+  authenticate,
+  MONTHLY_PLAN as SERVER_MONTHLY_PLAN,
+  PRO_PLAN as SERVER_PRO_PLAN,
+} from "../shopify.server";
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { billing } = await authenticate.admin(request);
   const formData = await request.formData();
-  const plan = formData.get("plan") === PRO_PLAN ? PRO_PLAN : MONTHLY_PLAN;
+  const plan =
+    formData.get("plan") === SERVER_PRO_PLAN
+      ? SERVER_PRO_PLAN
+      : SERVER_MONTHLY_PLAN;
 
   return billing.request({
     plan,
     isTest: process.env.NODE_ENV !== "production",
   });
 };
+
+// Plain string literals, not the ../shopify.server import above — that
+// import is only safe here because `action` is stripped from the client
+// bundle. PLANS is also used by the component below, so it can't reference
+// the server import without dragging shopify.server into the client bundle.
+const MONTHLY_PLAN = "Monthly Plan";
+const PRO_PLAN = "Pro Plan";
 
 const PLANS = [
   {
