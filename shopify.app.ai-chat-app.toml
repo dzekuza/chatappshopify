@@ -2,7 +2,7 @@
 # This is the PRODUCTION config. Deploy with: shopify app deploy --config ai-chat-app
 
 client_id = "491b02d88d133dfacc863cc6a7bdc8bf"
-name = "AI Chat app"
+name = "Orby AI Chat Widget"
 application_url = "https://ai-chat-widget-vert.vercel.app"
 embedded = true
 
