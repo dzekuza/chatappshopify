@@ -8,7 +8,6 @@
         "run",
         "dev",
         "--",
-        "--store=insanetest.myshopify.com",
         "--use-localhost"
       ],
       "port": 5173
