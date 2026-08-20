@@ -249,8 +249,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
               title: p.title,
               handle: p.handle,
               url: p.onlineStoreUrl,
-              price: (p.priceRangeV2 as any)?.minVariantPrice,
-              image: (p.featuredImage as any)?.url,
+              price: (p.priceRangeV2 as { minVariantPrice?: unknown } | undefined)
+                ?.minVariantPrice,
+              image: (p.featuredImage as { url?: unknown } | undefined)?.url,
               inStock: ((p.totalInventory as number) ?? 0) > 0,
             })),
           };

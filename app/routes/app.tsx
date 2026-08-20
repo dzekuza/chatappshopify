@@ -3,21 +3,36 @@ import { Outlet, redirect, useLoaderData, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 
-import { authenticate, MONTHLY_PLAN, PRO_PLAN } from "../shopify.server";
+import {
+  authenticate,
+  isBillingEnabled,
+  isTestBilling,
+  MONTHLY_PLAN,
+  PRO_PLAN,
+} from "../shopify.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { billing } = await authenticate.admin(request);
 
+  const url = new URL(request.url);
+
   // /app/plans is where onFailure sends merchants to pick a plan — the
   // billing gate can't apply to that page itself or it'd redirect in a loop.
-  const isPlansPage = new URL(request.url).pathname === "/app/plans";
+  const isPlansPage = url.pathname === "/app/plans";
 
-  if (!isPlansPage) {
+  if (isBillingEnabled && !isPlansPage) {
     try {
       await billing.require({
         plans: [MONTHLY_PLAN, PRO_PLAN],
-        isTest: process.env.NODE_ENV !== "production",
-        onFailure: async () => redirect("/app/plans"),
+        isTest: isTestBilling,
+        // Carry Shopify's params (shop, host, embedded, id_token, …) across.
+        // App Bridge reads shop/host off the document URL, so a bare-path
+        // redirect makes it throw "missing required configuration fields:
+        // shop" inside the iframe — and addDocumentResponseHeaders drops the
+        // frame-ancestors CSP for the same reason. Same pattern as
+        // app/routes/_index/route.tsx.
+        onFailure: async () =>
+          redirect(`/app/plans?${url.searchParams.toString()}`),
       });
     } catch (error) {
       // onFailure's redirect is thrown by billing.require — let it through.
@@ -33,11 +48,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   }
 
   // eslint-disable-next-line no-undef
-  return { apiKey: process.env.SHOPIFY_API_KEY || "" };
+  return { apiKey: process.env.SHOPIFY_API_KEY || "", isBillingEnabled };
 };
 
 export default function App() {
-  const { apiKey } = useLoaderData<typeof loader>();
+  const { apiKey, isBillingEnabled } = useLoaderData<typeof loader>();
 
   return (
     <AppProvider embedded apiKey={apiKey}>
@@ -46,8 +61,9 @@ export default function App() {
         <s-link href="/app/knowledge">Knowledge</s-link>
         <s-link href="/app/activity">Activity</s-link>
         {/* Persistent, so a merchant on any plan can upgrade or downgrade
-            without contacting support or reinstalling. */}
-        <s-link href="/app/plans">Plans</s-link>
+            without contacting support or reinstalling. Hidden where the
+            Billing API is unavailable (custom-distribution dev app). */}
+        {isBillingEnabled && <s-link href="/app/plans">Plans</s-link>}
       </s-app-nav>
       <Outlet />
     </AppProvider>

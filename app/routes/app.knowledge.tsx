@@ -363,6 +363,9 @@ export default function Knowledge() {
         </s-section>
       ) : null}
 
+      {/* @shopify/polaris-types doesn't export the s-modal element class, so
+          there's no non-`any` type to ref it against. */}
+      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
       <s-modal ref={modalRef as any} id="knowledge-modal" heading={modalHeading}>
         {pickerMode === "video" ? (
           isLoadingVideos ? (
@@ -443,7 +446,9 @@ export default function Knowledge() {
               labelAccessibilityVisibility="exclusive"
               placeholder="Search by product title…"
               value={productQuery}
-              onChange={(event: any) => runProductSearch(event.currentTarget.value)}
+              onChange={(event: Event) =>
+                runProductSearch((event.currentTarget as HTMLInputElement).value)
+              }
             />
             {isLoadingProducts ? (
               <s-paragraph>Loading products…</s-paragraph>
@@ -501,8 +506,8 @@ export default function Knowledge() {
                 label="Question"
                 value={form.question}
                 details="How a shopper might phrase it — the assistant matches similar wording too."
-                onChange={(event: any) => {
-                  const value = event.currentTarget.value;
+                onChange={(event: Event) => {
+                  const value = (event.currentTarget as HTMLInputElement).value;
                   setForm((prev) => ({ ...prev, question: value }));
                 }}
               />
@@ -523,8 +528,8 @@ export default function Knowledge() {
               label="Answer"
               value={form.answer}
               rows={4}
-              onChange={(event: any) => {
-                const value = event.currentTarget.value;
+              onChange={(event: Event) => {
+                const value = (event.currentTarget as HTMLTextAreaElement).value;
                 setForm((prev) => ({ ...prev, answer: value }));
               }}
             />
