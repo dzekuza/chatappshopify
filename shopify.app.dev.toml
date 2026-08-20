@@ -3,11 +3,8 @@
 # distribution, used for testing on the `development` branch. Deploy with:
 #   shopify app deploy --config dev
 #
-# TODO: fill in client_id below after creating the app in Partners Dashboard
-# (Apps > Create app > distribution: "Dev store" / "Custom distribution", not Public).
-
-client_id = "REPLACE_WITH_DEV_APP_CLIENT_ID"
-name = "Chat app dev"
+client_id = "f691442dd71492e77c87eb0195ca1c99"
+name = "Orby Chat DEV"
 application_url = "https://ai-chat-widget-dev.vercel.app"
 embedded = true
 
