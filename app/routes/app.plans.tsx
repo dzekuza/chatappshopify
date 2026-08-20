@@ -155,10 +155,7 @@ export default function Plans() {
             going.
           </s-paragraph>
         ) : null}
-        <s-grid
-          gridTemplateColumns="@container (inline-size <= 700px) 1fr, repeat(3, 1fr)"
-          gap="base"
-        >
+        <s-grid gridTemplateColumns="repeat(3, 1fr)" gap="base">
           {PLANS.map((plan) => (
             <s-box
               key={plan.name}

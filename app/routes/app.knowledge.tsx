@@ -472,26 +472,41 @@ export default function Knowledge() {
               </s-paragraph>
             ) : (
               <s-grid gridTemplateColumns="1fr 1fr" gap="base">
-                {products.map((product) => (
-                  <s-clickable
-                    key={product.id}
-                    padding="base"
-                    background="subdued"
-                    onClick={() => selectProduct(product)}
-                  >
-                    <s-stack direction="block" gap="small-200">
-                      {product.imageUrl ? (
-                        <s-image
-                          src={product.imageUrl}
-                          alt={product.title}
-                          aspectRatio="16/9"
-                          objectFit="cover"
-                        />
-                      ) : null}
-                      <s-text>{product.title}</s-text>
-                    </s-stack>
-                  </s-clickable>
-                ))}
+                {products.map((product) => {
+                  const isOnSale =
+                    product.compareAtPrice !== null &&
+                    product.price !== null &&
+                    parseFloat(product.compareAtPrice.replace(/[^0-9.]/g, "")) >
+                      parseFloat(product.price.replace(/[^0-9.]/g, ""));
+                  return (
+                    <s-clickable
+                      key={product.id}
+                      padding="base"
+                      background="subdued"
+                      onClick={() => selectProduct(product)}
+                    >
+                      <s-stack direction="block" gap="small-200">
+                        {product.imageUrl ? (
+                          <s-image
+                            src={product.imageUrl}
+                            alt={product.title}
+                            aspectRatio="1/1"
+                            objectFit="cover"
+                          />
+                        ) : null}
+                        <s-text>{product.title}</s-text>
+                        {product.price ? (
+                          <s-stack direction="inline" gap="small-200" alignItems="center">
+                            <s-text>{product.price}</s-text>
+                            {isOnSale ? (
+                              <s-badge tone="critical">Sale</s-badge>
+                            ) : null}
+                          </s-stack>
+                        ) : null}
+                      </s-stack>
+                    </s-clickable>
+                  );
+                })}
               </s-grid>
             )}
           </s-stack>
@@ -550,10 +565,21 @@ export default function Knowledge() {
 
             {form.mediaName ? (
               <s-stack direction="inline" gap="small-200" alignItems="center">
-                <s-badge tone="info">
-                  {form.mediaType === "image" ? "Image: " : "Video: "}
-                  {form.mediaName}
-                </s-badge>
+                {form.mediaType === "image" && form.mediaUrl ? (
+                  <>
+                    <s-thumbnail
+                      src={form.mediaUrl}
+                      alt={form.mediaName}
+                      size="base"
+                    />
+                    <s-text>{form.mediaName}</s-text>
+                  </>
+                ) : (
+                  <s-badge tone="info">
+                    {form.mediaType === "image" ? "Image: " : "Video: "}
+                    {form.mediaName}
+                  </s-badge>
+                )}
                 <s-button variant="tertiary" onClick={removeMedia}>
                   Remove
                 </s-button>

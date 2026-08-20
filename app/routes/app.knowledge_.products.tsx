@@ -6,6 +6,8 @@ export type ProductOption = {
   title: string;
   handle: string;
   imageUrl: string | null;
+  price: string | null;
+  compareAtPrice: string | null;
 };
 
 // Resource route the knowledge page's product picker fetches on demand —
@@ -32,6 +34,17 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
                 }
               }
             }
+            priceRangeV2 {
+              minVariantPrice {
+                amount
+                currencyCode
+              }
+            }
+            compareAtPriceRange {
+              minVariantCompareAtPrice {
+                amount
+              }
+            }
           }
         }
       }`,
@@ -44,11 +57,36 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     const featuredMedia = n.featuredMedia as
       | { preview?: { image?: { url?: string } } }
       | undefined;
+    const priceRangeV2 = n.priceRangeV2 as
+      | { minVariantPrice?: { amount?: string; currencyCode?: string } }
+      | undefined;
+    const compareAtPriceRange = n.compareAtPriceRange as
+      | { minVariantCompareAtPrice?: { amount?: string } }
+      | undefined;
+
+    const minPrice = priceRangeV2?.minVariantPrice;
+    const currencyCode = minPrice?.currencyCode;
+    const priceAmount = minPrice?.amount ? Number(minPrice.amount) : null;
+    const compareAtAmount = compareAtPriceRange?.minVariantCompareAtPrice
+      ?.amount
+      ? Number(compareAtPriceRange.minVariantCompareAtPrice.amount)
+      : null;
+
+    const formatAmount = (amount: number | null) =>
+      amount !== null && currencyCode
+        ? new Intl.NumberFormat("en-US", {
+            style: "currency",
+            currency: currencyCode,
+          }).format(amount)
+        : null;
+
     return {
       id: String(n.id ?? ""),
       title: String(n.title ?? ""),
       handle: String(n.handle ?? ""),
       imageUrl: featuredMedia?.preview?.image?.url ?? null,
+      price: formatAmount(priceAmount),
+      compareAtPrice: formatAmount(compareAtAmount),
     };
   });
 

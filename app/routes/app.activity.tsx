@@ -99,37 +99,42 @@ export default function Activity() {
 
   return (
     <s-page heading="Activity">
-      <s-section heading="Overview">
-        <s-grid gridTemplateColumns="1fr 1fr 1fr" gap="base">
-          <s-box padding="base" border="base" borderRadius="base">
-            <s-stack direction="block" gap="small-200">
-              <s-text color="subdued">Active sessions</s-text>
-              <s-heading>{stats.activeSessions}</s-heading>
-              <s-text color="subdued">Chats active in the last 15 minutes</s-text>
+      <s-section heading="Overview" padding="base">
+        <s-grid
+          gridTemplateColumns="@container (inline-size <= 400px) 1fr, 1fr auto 1fr auto 1fr"
+          gap="small"
+        >
+          <s-grid gap="small-300">
+            <s-heading>Active sessions</s-heading>
+            <s-stack direction="inline" gap="small-200">
+              <s-text>{String(stats.activeSessions)}</s-text>
             </s-stack>
-          </s-box>
-          <s-box padding="base" border="base" borderRadius="base">
-            <s-stack direction="block" gap="small-200">
-              <s-text color="subdued">Total customer chats</s-text>
-              <s-heading>{stats.totalChats}</s-heading>
-              <s-text color="subdued">All-time conversations with shoppers</s-text>
+            <s-text color="subdued">Chats active in the last 15 minutes</s-text>
+          </s-grid>
+          <s-divider direction="block" />
+          <s-grid gap="small-300">
+            <s-heading>Total customer chats</s-heading>
+            <s-stack direction="inline" gap="small-200">
+              <s-text>{String(stats.totalChats)}</s-text>
             </s-stack>
-          </s-box>
-          <s-box padding="base" border="base" borderRadius="base">
-            <s-stack direction="block" gap="small-200">
-              <s-text color="subdued">Conversion rate</s-text>
-              <s-heading>{stats.conversionRate}%</s-heading>
-              <s-text color="subdued">
-                {stats.convertedCount} of {stats.totalCustomersWithEmail} chat
-                customers went on to place an order
-              </s-text>
+            <s-text color="subdued">All-time conversations with shoppers</s-text>
+          </s-grid>
+          <s-divider direction="block" />
+          <s-grid gap="small-300">
+            <s-heading>Conversion rate</s-heading>
+            <s-stack direction="inline" gap="small-200">
+              <s-text>{`${stats.conversionRate}%`}</s-text>
             </s-stack>
-          </s-box>
+            <s-text color="subdued">
+              {stats.convertedCount} of {stats.totalCustomersWithEmail} chat
+              customers went on to place an order
+            </s-text>
+          </s-grid>
         </s-grid>
       </s-section>
 
-      <s-section heading="Conversations">
-        {conversations.length === 0 ? (
+      {conversations.length === 0 ? (
+        <s-section heading="Conversations">
           <s-grid gap="base" justifyItems="center">
             <s-heading>No conversations yet</s-heading>
             <s-paragraph>
@@ -145,7 +150,9 @@ export default function Activity() {
               </s-button>
             </s-button-group>
           </s-grid>
-        ) : (
+        </s-section>
+      ) : (
+        <s-section padding="none">
           <s-table variant="auto">
             <s-table-header-row>
               <s-table-header listSlot="primary">Conversation</s-table-header>
@@ -202,8 +209,8 @@ export default function Activity() {
               })}
             </s-table-body>
           </s-table>
-        )}
-      </s-section>
+        </s-section>
+      )}
     </s-page>
   );
 }

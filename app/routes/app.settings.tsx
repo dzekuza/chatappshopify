@@ -246,50 +246,57 @@ export default function SettingsPage() {
       </s-button>
 
       <form data-save-bar onSubmit={handleSubmit} onReset={handleReset}>
-        <WidgetSection
-          enabled={form.enabled}
-          welcomeMessage={form.welcomeMessage}
-          systemPrompt={form.systemPrompt}
-          onChange={update}
-        />
+        {/* <s-page> only auto-spaces <s-section> elements that are its own
+            direct children. Wrapping them in this <form> (required so
+            data-save-bar can track every field in one form) breaks that
+            direct-child relationship, so the gap has to be added back
+            explicitly here. */}
+        <s-stack direction="block" gap="large">
+          <WidgetSection
+            enabled={form.enabled}
+            welcomeMessage={form.welcomeMessage}
+            systemPrompt={form.systemPrompt}
+            onChange={update}
+          />
 
-        <AppearanceSection
-          primaryColor={form.primaryColor}
-          iconUrl={form.iconUrl}
-          position={form.position}
-          isUploadingIcon={isUploadingIcon}
-          iconUploadError={iconUploadError}
-          onUploadIcon={uploadIcon}
-          onRemoveIcon={removeIcon}
-          onChange={update}
-        />
+          <AppearanceSection
+            primaryColor={form.primaryColor}
+            iconUrl={form.iconUrl}
+            position={form.position}
+            isUploadingIcon={isUploadingIcon}
+            iconUploadError={iconUploadError}
+            onUploadIcon={uploadIcon}
+            onRemoveIcon={removeIcon}
+            onChange={update}
+          />
 
-        <AiModelSection
-          geminiModel={form.geminiModel}
-          language={form.language}
-          geminiApiKey={form.geminiApiKey}
-          isProPlan={isProPlan}
-          onChange={update}
-        />
+          <AiModelSection
+            geminiModel={form.geminiModel}
+            language={form.language}
+            geminiApiKey={form.geminiApiKey}
+            isProPlan={isProPlan}
+            onChange={update}
+          />
 
-        <KnowledgeSyncSection
-          knowledgeCollections={knowledgeCollections}
-          isSyncingCollections={isSyncingCollections}
-          onSync={syncCollections}
-          onRemove={removeCollection}
-        />
+          <KnowledgeSyncSection
+            knowledgeCollections={knowledgeCollections}
+            isSyncingCollections={isSyncingCollections}
+            onSync={syncCollections}
+            onRemove={removeCollection}
+          />
 
-        <ChatPreview
-          welcomeMessage={form.welcomeMessage}
-          primaryColor={form.primaryColor}
-          iconUrl={form.iconUrl}
-          position={form.position}
-          shopName={shopName}
-          systemPrompt={form.systemPrompt}
-          geminiModel={form.geminiModel}
-          language={form.language}
-          knowledgeCollections={knowledgeCollections}
-        />
+          <ChatPreview
+            welcomeMessage={form.welcomeMessage}
+            primaryColor={form.primaryColor}
+            iconUrl={form.iconUrl}
+            position={form.position}
+            shopName={shopName}
+            systemPrompt={form.systemPrompt}
+            geminiModel={form.geminiModel}
+            language={form.language}
+            knowledgeCollections={knowledgeCollections}
+          />
+        </s-stack>
       </form>
 
       {/* Must be a direct child of <s-page> (not nested inside the <form>

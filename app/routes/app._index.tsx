@@ -120,47 +120,49 @@ export default function Index() {
       ) : null}
 
       <s-section>
-        <s-grid gap="base">
+        <s-stack direction="block" gap="base">
           <s-stack direction="inline" gap="base" alignItems="center">
             <s-heading>Setup guide</s-heading>
             <s-badge tone={completed === setupSteps.length ? "success" : "info"}>
               {`${completed} of ${setupSteps.length} steps completed`}
             </s-badge>
           </s-stack>
-          {setupSteps.map((step) => (
-            <s-box key={step.key} padding="base" border="base" borderRadius="base">
-              <s-stack
-                direction="inline"
-                gap="base"
-                alignItems="center"
-                justifyContent="space-between"
-              >
-                <s-stack direction="inline" gap="small-400" alignItems="center">
-                  <s-checkbox
-                    label={step.label}
-                    labelAccessibilityVisibility="exclusive"
-                    {...(step.done ? { checked: true } : {})}
-                    disabled
-                  />
-                  <s-stack direction="block" gap="small-200">
-                    <s-text {...(step.done ? { color: "subdued" } : {})}>
-                      {step.label}
-                    </s-text>
-                    <s-text color="subdued">{step.description}</s-text>
-                  </s-stack>
-                </s-stack>
-                <s-button
-                  href={step.actionHref}
-                  {...(step.actionHref === addToThemeUrl
-                    ? { target: "_blank" }
-                    : {})}
+          <s-stack direction="block" gap="small-200">
+            {setupSteps.map((step) => (
+              <s-box key={step.key} padding="base" border="base" borderRadius="base">
+                <s-stack
+                  direction="inline"
+                  gap="base"
+                  alignItems="center"
+                  justifyContent="space-between"
                 >
-                  {step.actionLabel}
-                </s-button>
-              </s-stack>
-            </s-box>
-          ))}
-        </s-grid>
+                  <s-stack direction="inline" gap="small-400" alignItems="center">
+                    <s-checkbox
+                      label={step.label}
+                      labelAccessibilityVisibility="exclusive"
+                      {...(step.done ? { checked: true } : {})}
+                      disabled
+                    />
+                    <s-stack direction="block" gap="small-200">
+                      <s-text {...(step.done ? { color: "subdued" } : {})}>
+                        {step.label}
+                      </s-text>
+                      <s-text color="subdued">{step.description}</s-text>
+                    </s-stack>
+                  </s-stack>
+                  <s-button
+                    href={step.actionHref}
+                    {...(step.actionHref === addToThemeUrl
+                      ? { target: "_blank" }
+                      : {})}
+                  >
+                    {step.actionLabel}
+                  </s-button>
+                </s-stack>
+              </s-box>
+            ))}
+          </s-stack>
+        </s-stack>
       </s-section>
 
       <s-section padding="base">
