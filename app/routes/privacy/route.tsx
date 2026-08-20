@@ -11,17 +11,17 @@ export default function Privacy() {
         <p className={styles.updated}>Last updated: {LAST_UPDATED}</p>
 
         <p>
-          AI Chat Widget ("the App") is a Shopify app that adds an
-          AI-powered shopping assistant to a merchant's storefront. This
-          policy explains what data the App collects, how it's used, and how
-          it's handled when a shopper or merchant asks for it to be removed.
+          AI Chat Widget (&ldquo;the App&rdquo;) is a Shopify app that adds an
+          AI-powered shopping assistant to a merchant&rsquo;s storefront. This
+          policy explains what data the App collects, how it&rsquo;s used, and how
+          it&rsquo;s handled when a shopper or merchant asks for it to be removed.
         </p>
 
         <h2>Who this applies to</h2>
         <p>
           This policy covers two groups: <strong>merchants</strong> who
           install the App in their Shopify admin, and{" "}
-          <strong>shoppers</strong> who chat with the widget on a merchant's
+          <strong>shoppers</strong> who chat with the widget on a merchant&rsquo;s
           storefront.
         </p>
 
@@ -30,7 +30,7 @@ export default function Privacy() {
         <ul>
           <li>Name, and an email address or phone number (required to start a chat)</li>
           <li>The content of messages sent to and received from the assistant</li>
-          <li>An order number, if the shopper asks about an order's status</li>
+          <li>An order number, if the shopper asks about an order&rsquo;s status</li>
         </ul>
         <h3>From merchants</h3>
         <ul>
@@ -47,16 +47,16 @@ export default function Privacy() {
         <p>
           The App does not collect payment card details, and does not
           request a myshopify.com domain be typed in manually — installation
-          happens entirely through Shopify's standard OAuth flow.
+          happens entirely through Shopify&rsquo;s standard OAuth flow.
         </p>
 
         <h2>How we use this information</h2>
         <ul>
           <li>
-            To generate the assistant's replies — shopper messages are sent
-            to Google's Gemini API (or, on the Pro plan, the merchant's own
+            To generate the assistant&rsquo;s replies — shopper messages are sent
+            to Google&rsquo;s Gemini API (or, on the Pro plan, the merchant&rsquo;s own
             Gemini API key) along with relevant product data looked up live
-            from the merchant's store
+            from the merchant&rsquo;s store
           </li>
           <li>To look up order status when a shopper asks about an order</li>
           <li>
@@ -68,8 +68,8 @@ export default function Privacy() {
         </ul>
         <p>
           The assistant is instructed to only describe real products and
-          prices retrieved from the merchant's store — it does not have
-          access to any other merchant's data.
+          prices retrieved from the merchant&rsquo;s store — it does not have
+          access to any other merchant&rsquo;s data.
         </p>
 
         <h2>Who we share it with</h2>
@@ -82,12 +82,12 @@ export default function Privacy() {
               target="_blank"
               rel="noreferrer"
             >
-              Google's Gemini API terms
+              Google&rsquo;s Gemini API terms
             </a>
           </li>
           <li>
             <strong>Shopify</strong> — product, order, and store data is read
-            through Shopify's Admin API under the scopes the merchant
+            through Shopify&rsquo;s Admin API under the scopes the merchant
             approved at install
           </li>
           <li>
@@ -100,9 +100,9 @@ export default function Privacy() {
         <h2>How long we keep it</h2>
         <p>
           Conversations and messages are kept for as long as the merchant has
-          the App installed, so they remain visible in the merchant's
+          the App installed, so they remain visible in the merchant&rsquo;s
           Activity page. When a merchant uninstalls the App, all of that
-          shop's data — conversations, messages, widget settings, and
+          shop&rsquo;s data — conversations, messages, widget settings, and
           knowledge-base entries — is permanently deleted within 48 hours.
         </p>
 
@@ -113,14 +113,14 @@ export default function Privacy() {
           requests directly from Shopify (the{" "}
           <code>customers/data_request</code> and{" "}
           <code>customers/redact</code> webhooks), and will remove a
-          shopper's stored conversations and messages on request.
+          shopper&rsquo;s stored conversations and messages on request.
         </p>
 
         <h2>Security</h2>
         <p>
           All traffic to and from the App is encrypted with TLS. Application
           data lives in a dedicated, isolated database schema, accessible
-          only through the App's own server — never through a public API or
+          only through the App&rsquo;s own server — never through a public API or
           shared database access.
         </p>
 

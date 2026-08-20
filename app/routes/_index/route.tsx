@@ -26,7 +26,7 @@ export default function App() {
         <ul className={styles.list}>
           <li>
             <strong>Product-aware answers</strong>. The assistant looks up
-            your store's actual products, prices, and stock instead of
+            your store&rsquo;s actual products, prices, and stock instead of
             guessing.
           </li>
           <li>
@@ -34,7 +34,7 @@ export default function App() {
             custom color, position, and welcome message.
           </li>
           <li>
-            <strong>Drop-in setup</strong>. Add the "AI Chat Widget" block in
+            <strong>Drop-in setup</strong>. Add the &ldquo;AI Chat Widget&rdquo; block in
             your theme editor — no code changes needed.
           </li>
         </ul>

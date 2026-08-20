@@ -428,7 +428,7 @@ export default function Index() {
       const decoder = new TextDecoder();
       let full = "";
 
-      while (true) {
+      for (;;) {
         const chunk = await reader.read();
         if (chunk.done) break;
         full += decoder.decode(chunk.value, { stream: true });
@@ -546,16 +546,16 @@ export default function Index() {
           <s-switch
             label="Enable chat widget on storefront"
             {...(form.enabled ? { checked: true } : {})}
-            onChange={(event: any) =>
-              update("enabled", event.currentTarget.checked)
+            onChange={(event: Event) =>
+              update("enabled", (event.currentTarget as HTMLInputElement).checked)
             }
           />
           <s-text-field
             label="Welcome message"
             value={form.welcomeMessage}
             details="Shown when a shopper first opens the widget."
-            onChange={(event: any) =>
-              update("welcomeMessage", event.currentTarget.value)
+            onChange={(event: Event) =>
+              update("welcomeMessage", (event.currentTarget as HTMLInputElement).value)
             }
           />
           <s-text-area
@@ -563,8 +563,8 @@ export default function Index() {
             value={form.systemPrompt}
             rows={5}
             details="Tells the AI how to behave. It can also look up real product data from your store."
-            onChange={(event: any) =>
-              update("systemPrompt", event.currentTarget.value)
+            onChange={(event: Event) =>
+              update("systemPrompt", (event.currentTarget as HTMLTextAreaElement).value)
             }
           />
         </s-stack>
@@ -575,8 +575,8 @@ export default function Index() {
           <s-color-field
             label="Brand color"
             value={form.primaryColor}
-            onChange={(event: any) =>
-              update("primaryColor", event.currentTarget.value)
+            onChange={(event: Event) =>
+              update("primaryColor", (event.currentTarget as HTMLInputElement).value)
             }
           />
           <s-stack direction="block" gap="small-200">
@@ -599,8 +599,8 @@ export default function Index() {
                 label="Upload icon"
                 accessibilityLabel="Upload a custom launcher icon"
                 {...(isUploadingIcon ? { disabled: true } : {})}
-                onChange={(event: any) => {
-                  const file = event.currentTarget.files?.[0];
+                onChange={(event: Event) => {
+                  const file = (event.currentTarget as HTMLInputElement).files?.[0];
                   if (file instanceof File) uploadIcon(file);
                 }}
               />
@@ -622,8 +622,8 @@ export default function Index() {
           <s-select
             label="Position"
             value={form.position}
-            onChange={(event: any) =>
-              update("position", event.currentTarget.value)
+            onChange={(event: Event) =>
+              update("position", (event.currentTarget as HTMLSelectElement).value)
             }
           >
             {POSITIONS.map((p) => (
@@ -640,8 +640,8 @@ export default function Index() {
           <s-select
             label="Gemini model"
             value={form.geminiModel}
-            onChange={(event: any) =>
-              update("geminiModel", event.currentTarget.value)
+            onChange={(event: Event) =>
+              update("geminiModel", (event.currentTarget as HTMLSelectElement).value)
             }
           >
             {GEMINI_MODELS.map((m) => (
@@ -654,8 +654,8 @@ export default function Index() {
             label="Reply language"
             value={form.language}
             details="Controls what language the assistant replies in, regardless of the storefront's default language."
-            onChange={(event: any) =>
-              update("language", event.currentTarget.value)
+            onChange={(event: Event) =>
+              update("language", (event.currentTarget as HTMLSelectElement).value)
             }
           >
             {LANGUAGES.map((l) => (
@@ -669,15 +669,15 @@ export default function Index() {
               label="Your own Gemini API key (Pro plan)"
               details="Requests use your own Gemini quota instead of the app's shared key. Leave blank to fall back to the shared key."
               value={form.geminiApiKey ?? ""}
-              onChange={(event: any) =>
-                update("geminiApiKey", event.currentTarget.value)
+              onChange={(event: Event) =>
+                update("geminiApiKey", (event.currentTarget as HTMLInputElement).value)
               }
             />
           ) : (
             <s-banner tone="info" heading="Bring your own Gemini API key">
               <s-paragraph>
                 Upgrade to the Pro plan to use your own Gemini API key instead
-                of the app's shared key.
+                of the app&rsquo;s shared key.
               </s-paragraph>
               <s-button slot="secondary-actions" href="/app/plans">
                 View plans
@@ -879,13 +879,13 @@ export default function Index() {
       <s-section slot="aside" heading="Setup">
         <s-stack direction="block" gap="base">
           <s-paragraph>
-            Click "Add to theme" above to open the theme editor with the AI
+            Click &ldquo;Add to theme&rdquo; above to open the theme editor with the AI
             Chat Widget block ready to enable on your storefront.
           </s-paragraph>
           <s-paragraph>
             The Gemini API key is configured via the{" "}
             <s-text type="strong">GEMINI_API_KEY</s-text> environment
-            variable, not here — it's never exposed to shoppers.
+            variable, not here — it&rsquo;s never exposed to shoppers.
           </s-paragraph>
         </s-stack>
       </s-section>

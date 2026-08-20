@@ -217,7 +217,7 @@ export default function Activity() {
                       <s-link
                         id={linkId}
                         href={`/app/activity/${c.conversationId}`}
-                        onClick={(event: any) => {
+                        onClick={(event: Event) => {
                           event.preventDefault();
                           navigate(`/app/activity/${c.conversationId}`);
                         }}

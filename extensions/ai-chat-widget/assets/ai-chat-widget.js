@@ -38,7 +38,9 @@
   function storeContact(value) {
     try {
       window.sessionStorage.setItem("aicw-contact", JSON.stringify(value));
-    } catch (err) {}
+    } catch (err) {
+      // sessionStorage unavailable (e.g. private browsing) — ignore.
+    }
   }
 
   var contact = getStoredContact();
@@ -314,7 +316,9 @@
       lastAgentMessageAt = new Date(0).toISOString();
       try {
         window.sessionStorage.removeItem("aicw-conversation-id");
-      } catch (err) {}
+      } catch (err) {
+        // sessionStorage unavailable (e.g. private browsing) — ignore.
+      }
       conversationId = getConversationId();
     });
 
@@ -585,7 +589,7 @@
         var decoder = new TextDecoder();
         var full = "";
 
-        while (true) {
+        for (;;) {
           var chunk = await reader.read();
           if (chunk.done) break;
           full += decoder.decode(chunk.value, { stream: true });
