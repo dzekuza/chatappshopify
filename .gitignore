@@ -33,3 +33,6 @@ database.sqlite
 .shipstudio/
 .vercel
 .env*
+
+# Keep the template checked in — the ignore rules above would swallow it.
+!.env.example

@@ -9,9 +9,10 @@ application_url = "https://ai-chat-widget-dev.vercel.app"
 embedded = true
 
 [build]
-# true here (unlike the prod config) is fine — this app only ever runs via
-# `shopify app dev` against a personal dev store, so a tunnel URL rewrite is expected.
-automatically_update_urls_on_dev = true
+# false, same as the prod config: this app is also hosted (ai-chat-widget-dev on
+# Vercel), so letting `shopify app dev` rewrite application_url to a tunnel breaks
+# the hosted dev app the moment the tunnel dies.
+automatically_update_urls_on_dev = false
 
 [webhooks]
 api_version = "2026-07"

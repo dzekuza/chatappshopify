@@ -11,6 +11,14 @@ import prisma from "./db.server";
 export const MONTHLY_PLAN = "Monthly Plan";
 export const PRO_PLAN = "Pro Plan";
 
+// Test charges instead of real ones. NODE_ENV is always "production" on Vercel,
+// so it can't tell the dev deployment from the live one — a dev store can only
+// complete a test charge, and without this the dev app strands the merchant on
+// /app/plans. Set SHOPIFY_BILLING_TEST=true on the dev project only.
+export const isTestBilling =
+  process.env.SHOPIFY_BILLING_TEST === "true" ||
+  process.env.NODE_ENV !== "production";
+
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY,
   apiSecretKey: process.env.SHOPIFY_API_SECRET || "",

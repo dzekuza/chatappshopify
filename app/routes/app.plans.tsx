@@ -2,6 +2,7 @@ import type { ActionFunctionArgs } from "react-router";
 import { useFetcher } from "react-router";
 import {
   authenticate,
+  isTestBilling,
   MONTHLY_PLAN as SERVER_MONTHLY_PLAN,
   PRO_PLAN as SERVER_PRO_PLAN,
 } from "../shopify.server";
@@ -16,7 +17,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   return billing.request({
     plan,
-    isTest: process.env.NODE_ENV !== "production",
+    isTest: isTestBilling,
   });
 };
 
