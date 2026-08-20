@@ -1,5 +1,5 @@
-import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import { redirect, useFetcher } from "react-router";
+import type { LoaderFunctionArgs } from "react-router";
+import { redirect, useSearchParams } from "react-router";
 import {
   authenticate,
   isBillingEnabled,
@@ -8,45 +8,41 @@ import {
   PRO_PLAN as SERVER_PRO_PLAN,
 } from "../shopify.server";
 
-// Where the Billing API is unavailable (custom-distribution dev app), this page
-// can only ever fail, so send the merchant back to the app. Keep Shopify's
-// params on the redirect or App Bridge can't initialise — see app.tsx.
+// The charge is started from this loader, on a `?plan=` document navigation —
+// never from an action. billing.request ends in the library's redirectOutOfApp,
+// which branches on the request type: an XHR (any fetcher/Form submit, which
+// carries an Authorization header) gets a bodyless 401 that React Router hands
+// straight to the ErrorBoundary, while a document request gets the
+// /auth/exit-iframe redirect App Bridge needs to take the top window to
+// Shopify's charge confirmation page.
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  await authenticate.admin(request);
+  const { billing } = await authenticate.admin(request);
+  const url = new URL(request.url);
 
+  // Where the Billing API is unavailable (custom-distribution dev app), this
+  // page can only ever fail, so send the merchant back to the app. Keep
+  // Shopify's params on the redirect or App Bridge can't initialise — see
+  // app.tsx.
   if (!isBillingEnabled) {
-    const url = new URL(request.url);
     throw redirect(`/app?${url.searchParams.toString()}`);
+  }
+
+  const requestedPlan = url.searchParams.get("plan");
+  if (
+    requestedPlan === SERVER_MONTHLY_PLAN ||
+    requestedPlan === SERVER_PRO_PLAN
+  ) {
+    // Always throws — either the exit-iframe redirect or a Billing API error.
+    return billing.request({ plan: requestedPlan, isTest: isTestBilling });
   }
 
   return null;
 };
 
-export const action = async ({ request }: ActionFunctionArgs) => {
-  const { billing } = await authenticate.admin(request);
-
-  if (!isBillingEnabled) {
-    throw new Response("Billing is not available for this app", {
-      status: 403,
-    });
-  }
-
-  const formData = await request.formData();
-  const plan =
-    formData.get("plan") === SERVER_PRO_PLAN
-      ? SERVER_PRO_PLAN
-      : SERVER_MONTHLY_PLAN;
-
-  return billing.request({
-    plan,
-    isTest: isTestBilling,
-  });
-};
-
-// Plain string literals, not the ../shopify.server import above — that
-// import is only safe here because `action` is stripped from the client
-// bundle. PLANS is also used by the component below, so it can't reference
-// the server import without dragging shopify.server into the client bundle.
+// Plain string literals, not the ../shopify.server import above — that import
+// is only safe in the loader because it's stripped from the client bundle.
+// PLANS is used by the component below, so it can't reference the server
+// import without dragging shopify.server into the client bundle.
 const MONTHLY_PLAN = "Monthly Plan";
 const PRO_PLAN = "Pro Plan";
 
@@ -75,7 +71,17 @@ const PLANS = [
 ];
 
 export default function Plans() {
-  const fetcher = useFetcher();
+  const [searchParams] = useSearchParams();
+
+  // A plain link, not a Form: s-button renders an anchor that React Router
+  // doesn't intercept, so the click is a real document navigation. Shopify's
+  // params (shop, host, embedded, …) have to ride along or App Bridge can't
+  // initialise on the page that loads.
+  const planHref = (plan: string) => {
+    const params = new URLSearchParams(searchParams);
+    params.set("plan", plan);
+    return `/app/plans?${params.toString()}`;
+  };
 
   return (
     <s-page heading="Choose a plan">
@@ -98,21 +104,9 @@ export default function Plans() {
                     <s-text key={feature}>• {feature}</s-text>
                   ))}
                 </s-stack>
-                <fetcher.Form method="post">
-                  <input type="hidden" name="plan" value={plan.name} />
-                  <s-button
-                    type="submit"
-                    variant="primary"
-                    loading={
-                      fetcher.state !== "idle" &&
-                      fetcher.formData?.get("plan") === plan.name
-                        ? true
-                        : undefined
-                    }
-                  >
-                    Start free trial
-                  </s-button>
-                </fetcher.Form>
+                <s-button href={planHref(plan.name)} variant="primary">
+                  Start free trial
+                </s-button>
               </s-stack>
             </s-box>
           ))}
