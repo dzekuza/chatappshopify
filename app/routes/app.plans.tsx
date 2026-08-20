@@ -1,5 +1,6 @@
+import { useEffect } from "react";
 import type { LoaderFunctionArgs } from "react-router";
-import { redirect, useSearchParams } from "react-router";
+import { redirect, useLoaderData, useSearchParams } from "react-router";
 import {
   authenticate,
   isBillingEnabled,
@@ -8,13 +9,19 @@ import {
   PRO_PLAN as SERVER_PRO_PLAN,
 } from "../shopify.server";
 
-// The charge is started from this loader, on a `?plan=` document navigation —
-// never from an action. billing.request ends in the library's redirectOutOfApp,
-// which branches on the request type: an XHR (any fetcher/Form submit, which
-// carries an Authorization header) gets a bodyless 401 that React Router hands
-// straight to the ErrorBoundary, while a document request gets the
-// /auth/exit-iframe redirect App Bridge needs to take the top window to
-// Shopify's charge confirmation page.
+// REAUTH_URL_HEADER in @shopify/shopify-app-react-router — the header the
+// library puts the charge confirmation URL on when it answers an XHR.
+const REAUTH_URL_HEADER = "X-Shopify-API-Request-Failure-Reauthorize-Url";
+
+// The charge is started from this loader on a `?plan=` navigation, never from
+// an action. billing.request always throws, and what it throws depends on the
+// request type: a request carrying an Authorization header — which is every
+// fetcher submit AND every client-side navigation React Router turns into a
+// `.data` fetch — gets a bodyless 401 that lands in the ErrorBoundary, while a
+// true document load gets the /auth/exit-iframe redirect. Inside the embedded
+// app almost everything is the former, so rather than fighting for a document
+// load, read the confirmation URL off the 401 and let the component send the
+// top window there through App Bridge.
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { billing } = await authenticate.admin(request);
   const url = new URL(request.url);
@@ -32,11 +39,20 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     requestedPlan === SERVER_MONTHLY_PLAN ||
     requestedPlan === SERVER_PRO_PLAN
   ) {
-    // Always throws — either the exit-iframe redirect or a Billing API error.
-    return billing.request({ plan: requestedPlan, isTest: isTestBilling });
+    try {
+      // Always throws: the 401 below, an exit-iframe redirect on a document
+      // load, or a Billing API error.
+      await billing.request({ plan: requestedPlan, isTest: isTestBilling });
+    } catch (thrown) {
+      if (thrown instanceof Response) {
+        const confirmationUrl = thrown.headers.get(REAUTH_URL_HEADER);
+        if (confirmationUrl) return { confirmationUrl };
+      }
+      throw thrown;
+    }
   }
 
-  return null;
+  return { confirmationUrl: null };
 };
 
 // Plain string literals, not the ../shopify.server import above — that import
@@ -71,12 +87,20 @@ const PLANS = [
 ];
 
 export default function Plans() {
+  const { confirmationUrl } = useLoaderData<typeof loader>();
   const [searchParams] = useSearchParams();
 
-  // A plain link, not a Form: s-button renders an anchor that React Router
-  // doesn't intercept, so the click is a real document navigation. Shopify's
-  // params (shop, host, embedded, …) have to ride along or App Bridge can't
-  // initialise on the page that loads.
+  // Shopify's confirmation page can't render inside the app iframe, so it has
+  // to be opened on the top window. App Bridge intercepts window.open with a
+  // "_top" target and performs the redirect.
+  useEffect(() => {
+    if (confirmationUrl) {
+      window.open(confirmationUrl, "_top");
+    }
+  }, [confirmationUrl]);
+
+  // Shopify's params (shop, host, embedded, …) have to ride along or App
+  // Bridge can't initialise on the page that loads.
   const planHref = (plan: string) => {
     const params = new URLSearchParams(searchParams);
     params.set("plan", plan);
