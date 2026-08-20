@@ -5,6 +5,11 @@ import { z } from "zod";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import {
+  countConversationsThisMonth,
+  FREE_PLAN_MONTHLY_CONVERSATIONS,
+  hasActiveSubscription,
+} from "../billing.server";
+import {
   FACTUAL_ACCURACY_GUARDRAILS,
   merchantPersonaPrompt,
 } from "../chat-guardrails.server";
@@ -211,6 +216,23 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   });
 
   if (!existingConversation) {
+    // Free-plan cap. Counting first keeps this free of an Admin API call for
+    // every chat — the subscription is only looked up once a shop is actually
+    // at the cap. Conversations already under way are unaffected, since this
+    // branch only runs when a new one is being created.
+    const conversationsThisMonth = await countConversationsThisMonth(
+      session.shop,
+    );
+    if (conversationsThisMonth >= FREE_PLAN_MONTHLY_CONVERSATIONS) {
+      const isPaid = await hasActiveSubscription(admin);
+      if (!isPaid) {
+        return new Response(
+          "This store has reached its monthly chat limit. Please contact the store directly.",
+          { status: 402 },
+        );
+      }
+    }
+
     const contact = (body?.contact ?? {}) as Record<string, unknown>;
     const customerName =
       typeof contact.name === "string" ? contact.name.trim() : "";

@@ -580,8 +580,19 @@
         });
 
         if (!response.ok || !response.body) {
-          assistantEl.textContent =
-            "Sorry, something went wrong. Please try again.";
+          // 402 is the store's monthly conversation limit — the body carries a
+          // shopper-facing sentence worth showing instead of the generic error.
+          var fallback = "Sorry, something went wrong. Please try again.";
+          if (response.status === 402) {
+            try {
+              var limitText = await response.text();
+              assistantEl.textContent = limitText || fallback;
+            } catch (readErr) {
+              assistantEl.textContent = fallback;
+            }
+          } else {
+            assistantEl.textContent = fallback;
+          }
           return;
         }
 
