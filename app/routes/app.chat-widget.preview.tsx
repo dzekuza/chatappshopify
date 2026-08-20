@@ -3,6 +3,10 @@ import { streamText, tool, stepCountIs, type ModelMessage } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { z } from "zod";
 import { authenticate } from "../shopify.server";
+import {
+  FACTUAL_ACCURACY_GUARDRAILS,
+  merchantPersonaPrompt,
+} from "../chat-guardrails.server";
 import prisma from "../db.server";
 
 const MAX_MESSAGES = 20;
@@ -189,11 +193,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const result = streamText({
     model: google(geminiModel),
     system: [
-      systemPrompt,
+      merchantPersonaPrompt(systemPrompt),
       languageInstruction(language),
       knowledgeBasePrompt(knowledgeEntries),
       ORDER_TOOL_INSTRUCTION,
       HANDOFF_TOOL_INSTRUCTION,
+      // Last, so it overrides anything the merchant configured above.
+      FACTUAL_ACCURACY_GUARDRAILS,
     ]
       .filter(Boolean)
       .join("\n\n"),
