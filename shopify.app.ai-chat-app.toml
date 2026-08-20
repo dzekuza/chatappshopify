@@ -7,8 +7,6 @@ application_url = "https://ai-chat-widget-vert.vercel.app"
 embedded = true
 
 [build]
-# `shopify app deploy` must push this file's URLs/scopes/proxy, not just the extension.
-include_config_on_deploy = true
 # Keep false on the production config so a `shopify app dev` session can't
 # rewrite application_url/redirect_urls back to a tunnel URL.
 automatically_update_urls_on_dev = false
