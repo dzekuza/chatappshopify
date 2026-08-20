@@ -22,10 +22,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     } catch (error) {
       // onFailure's redirect is thrown by billing.require — let it through.
       if (error instanceof Response) throw error;
-      // Anything else is the Billing API itself failing (most commonly: the app
-      // isn't approved to charge merchants yet, which 500s every page on a live
-      // store). Don't brick the admin over it — let the merchant in.
-      console.error("Billing check failed, allowing access:", error);
+      // Narrow: only swallow the "app can't charge merchants yet" case, which
+      // 500s every page on a live store before App Store approval. Any other
+      // Billing API error must surface — silently allowing access on a generic
+      // failure would hand out the paid app for free.
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/not approved|cannot charge|can't charge/i.test(message)) throw error;
+      console.error("Billing unavailable (app not approved to charge):", error);
     }
   }
 
@@ -42,6 +45,9 @@ export default function App() {
         <s-link href="/app">Settings</s-link>
         <s-link href="/app/knowledge">Knowledge</s-link>
         <s-link href="/app/activity">Activity</s-link>
+        {/* Persistent, so a merchant on any plan can upgrade or downgrade
+            without contacting support or reinstalling. */}
+        <s-link href="/app/plans">Plans</s-link>
       </s-app-nav>
       <Outlet />
     </AppProvider>
