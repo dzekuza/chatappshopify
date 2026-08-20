@@ -13,16 +13,25 @@ import {
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { billing } = await authenticate.admin(request);
 
+  const url = new URL(request.url);
+
   // /app/plans is where onFailure sends merchants to pick a plan — the
   // billing gate can't apply to that page itself or it'd redirect in a loop.
-  const isPlansPage = new URL(request.url).pathname === "/app/plans";
+  const isPlansPage = url.pathname === "/app/plans";
 
   if (!isPlansPage) {
     try {
       await billing.require({
         plans: [MONTHLY_PLAN, PRO_PLAN],
         isTest: isTestBilling,
-        onFailure: async () => redirect("/app/plans"),
+        // Carry Shopify's params (shop, host, embedded, id_token, …) across.
+        // App Bridge reads shop/host off the document URL, so a bare-path
+        // redirect makes it throw "missing required configuration fields:
+        // shop" inside the iframe — and addDocumentResponseHeaders drops the
+        // frame-ancestors CSP for the same reason. Same pattern as
+        // app/routes/_index/route.tsx.
+        onFailure: async () =>
+          redirect(`/app/plans?${url.searchParams.toString()}`),
       });
     } catch (error) {
       // onFailure's redirect is thrown by billing.require — let it through.

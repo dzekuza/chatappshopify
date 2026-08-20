@@ -62,6 +62,7 @@ Despite the global stack defaults, this app's admin (`app/routes/app*.tsx`) uses
 - For back navigation, use `<s-link slot="breadcrumb-actions">` on `<s-page>` (renders as the standard Admin back-chevron) rather than an inline link in the page body.
 - Custom CSS for these pages (e.g. the bubble/panel chat preview UI) lives in CSS Modules under `app/styles/` — **not** colocated in `app/routes/` as `<routename>.module.css`, because `@react-router/fs-routes` will try to parse a same-named `.module.css` file as a route module.
 - Use the `shopify-plugin:*` skills / `mcp__shopify-dev-mcp__validate_component_codeblocks` (api: `polaris-app-home`) to validate generated Polaris web component JSX before shipping it — the type errors it catches (invalid prop, invalid keyword value) are easy to introduce.
+- Any server-side `redirect()` between `/app*` routes must carry `new URL(request.url).searchParams` through. Shopify opens the app with `shop`/`host`/`embedded`/`id_token` on the URL, and the App Bridge script reads `shop`/`host` off the *document* URL — a bare-path redirect makes it throw `missing required configuration fields: shop` and makes `addDocumentResponseHeaders` skip the `frame-ancestors` CSP. This took down the whole admin once already.
 
 ### Storefront widget: vanilla JS/CSS, mirrors the admin preview's visual language deliberately
 
