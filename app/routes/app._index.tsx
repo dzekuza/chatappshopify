@@ -136,14 +136,14 @@ export default function Index() {
                   alignItems="center"
                   justifyContent="space-between"
                 >
-                  <s-stack direction="inline" gap="small-400" alignItems="center">
+                  <s-stack direction="inline" gap="small-200" alignItems="center">
                     <s-checkbox
                       label={step.label}
                       labelAccessibilityVisibility="exclusive"
                       {...(step.done ? { checked: true } : {})}
                       disabled
                     />
-                    <s-stack direction="block" gap="small-200">
+                    <s-stack direction="block" gap="small-400">
                       <s-text {...(step.done ? { color: "subdued" } : {})}>
                         {step.label}
                       </s-text>

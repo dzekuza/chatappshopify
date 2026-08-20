@@ -27,6 +27,41 @@ function roleTone(role: string) {
   return "auto";
 }
 
+const URL_PATTERN = /https?:\/\/\S+/g;
+const IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"];
+const VIDEO_EXTENSIONS = [".mp4", ".webm", ".mov"];
+
+function mediaTypeForUrl(url: string): "image" | "video" | null {
+  let pathname: string;
+  try {
+    pathname = new URL(url).pathname.toLowerCase();
+  } catch {
+    return null;
+  }
+  if (IMAGE_EXTENSIONS.some((ext) => pathname.endsWith(ext))) return "image";
+  if (VIDEO_EXTENSIONS.some((ext) => pathname.endsWith(ext))) return "video";
+  return null;
+}
+
+// Knowledge-entry answers can embed a Shopify CDN media URL straight in the
+// AI's reply text (see KnowledgeEntry.mediaUrl) — surface it as an actual
+// preview instead of a raw link, and drop it from the displayed text so it
+// isn't shown twice.
+function splitMessageMedia(content: string) {
+  const urls = content.match(URL_PATTERN) ?? [];
+  const media = urls
+    .map((url) => ({ url, type: mediaTypeForUrl(url) }))
+    .filter((m): m is { url: string; type: "image" | "video" } => m.type !== null);
+
+  let text = content;
+  for (const m of media) {
+    text = text.replace(m.url, "");
+  }
+  text = text.replace(/\s+/g, " ").trim();
+
+  return { text, media };
+}
+
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const conversationId = params.conversationId as string;
@@ -107,23 +142,41 @@ export default function ActivityThread() {
           <s-paragraph>This conversation could not be found.</s-paragraph>
         ) : (
           <s-stack direction="block" gap="base">
-            {messages.map((m) => (
-              <s-box
-                key={m.id}
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
-                {...(m.role !== "user" ? { background: "subdued" } : {})}
-              >
-                <s-stack direction="block" gap="small">
-                  <s-stack direction="inline" gap="small" alignItems="center">
-                    <s-badge tone={roleTone(m.role)}>{roleLabel(m.role)}</s-badge>
-                    <s-text color="subdued">{formatTime(m.createdAt)}</s-text>
+            {messages.map((m) => {
+              const { text, media } = splitMessageMedia(m.content);
+              return (
+                <s-box
+                  key={m.id}
+                  padding="base"
+                  borderWidth="base"
+                  borderRadius="base"
+                  {...(m.role !== "user" ? { background: "subdued" } : {})}
+                >
+                  <s-stack direction="block" gap="small">
+                    <s-stack direction="inline" gap="small" alignItems="center">
+                      <s-badge tone={roleTone(m.role)}>{roleLabel(m.role)}</s-badge>
+                      <s-text color="subdued">{formatTime(m.createdAt)}</s-text>
+                    </s-stack>
+                    {text ? <s-paragraph>{text}</s-paragraph> : null}
+                    {media.map((m2) =>
+                      m2.type === "image" ? (
+                        <s-box
+                          key={m2.url}
+                          maxInlineSize="240px"
+                          borderRadius="base"
+                          overflow="hidden"
+                        >
+                          <s-image src={m2.url} alt="" inlineSize="fill" />
+                        </s-box>
+                      ) : (
+                        // eslint-disable-next-line jsx-a11y/media-has-caption
+                        <video key={m2.url} src={m2.url} controls width={240} />
+                      ),
+                    )}
                   </s-stack>
-                  <s-paragraph>{m.content}</s-paragraph>
-                </s-stack>
-              </s-box>
-            ))}
+                </s-box>
+              );
+            })}
           </s-stack>
         )}
       </s-section>
