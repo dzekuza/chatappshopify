@@ -13,11 +13,20 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const isPlansPage = new URL(request.url).pathname === "/app/plans";
 
   if (!isPlansPage) {
-    await billing.require({
-      plans: [MONTHLY_PLAN, PRO_PLAN],
-      isTest: process.env.NODE_ENV !== "production",
-      onFailure: async () => redirect("/app/plans"),
-    });
+    try {
+      await billing.require({
+        plans: [MONTHLY_PLAN, PRO_PLAN],
+        isTest: process.env.NODE_ENV !== "production",
+        onFailure: async () => redirect("/app/plans"),
+      });
+    } catch (error) {
+      // onFailure's redirect is thrown by billing.require — let it through.
+      if (error instanceof Response) throw error;
+      // Anything else is the Billing API itself failing (most commonly: the app
+      // isn't approved to charge merchants yet, which 500s every page on a live
+      // store). Don't brick the admin over it — let the merchant in.
+      console.error("Billing check failed, allowing access:", error);
+    }
   }
 
   // eslint-disable-next-line no-undef

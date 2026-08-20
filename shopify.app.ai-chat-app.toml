@@ -1,4 +1,5 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+# This is the PRODUCTION config. Deploy with: shopify app deploy --config ai-chat-app
 
 client_id = "491b02d88d133dfacc863cc6a7bdc8bf"
 name = "AI Chat app"
@@ -6,10 +7,18 @@ application_url = "https://ai-chat-widget-vert.vercel.app"
 embedded = true
 
 [build]
-automatically_update_urls_on_dev = true
+# `shopify app deploy` must push this file's URLs/scopes/proxy, not just the extension.
+include_config_on_deploy = true
+# Keep false on the production config so a `shopify app dev` session can't
+# rewrite application_url/redirect_urls back to a tunnel URL.
+automatically_update_urls_on_dev = false
 
 [webhooks]
+# Must match ApiVersion.July26 used in app/shopify.server.ts.
 api_version = "2026-07"
+customers_data_request_url = "/webhooks/customers/data_request"
+customers_redact_url = "/webhooks/customers/redact"
+shop_redact_url = "/webhooks/shop/redact"
 
   [[webhooks.subscriptions]]
   uri = "/webhooks/app/scopes_update"
@@ -23,10 +32,18 @@ api_version = "2026-07"
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
 scopes = "read_files,read_orders,read_products"
 optional_scopes = [ ]
+# Shopify managed installation — no legacy OAuth grant screen on install.
 use_legacy_install_flow = false
 
 [auth]
-redirect_urls = [ "https://ai-chat-widget-vert.vercel.app/api/auth" ]
+# authPathPrefix is "/auth" in app/shopify.server.ts, so the OAuth callback the
+# library builds is <app_url>/auth/callback. The other two are the template's
+# historical aliases, kept so an already-installed shop can still re-auth.
+redirect_urls = [
+  "https://ai-chat-widget-vert.vercel.app/auth/callback",
+  "https://ai-chat-widget-vert.vercel.app/auth/shopify/callback",
+  "https://ai-chat-widget-vert.vercel.app/api/auth/callback"
+]
 
 [app_proxy]
 url = "https://ai-chat-widget-vert.vercel.app/apps/chat-widget"
