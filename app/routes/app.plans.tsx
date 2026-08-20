@@ -119,6 +119,13 @@ const PLANS = [
   },
 ];
 
+// Monthly and Pro sit inline in the top row, Free spans the full width below.
+const DISPLAY_ORDER_PLANS = [
+  PLANS.find((p) => p.name === MONTHLY_PLAN)!,
+  PLANS.find((p) => p.name === PRO_PLAN)!,
+  PLANS.find((p) => p.name === FREE_PLAN)!,
+];
+
 export default function Plans() {
   const { confirmationUrl, currentPlan, conversationsThisMonth, freeLimit } =
     useLoaderData<typeof loader>();
@@ -155,14 +162,17 @@ export default function Plans() {
             going.
           </s-paragraph>
         ) : null}
-        <s-grid gridTemplateColumns="repeat(3, 1fr)" gap="base">
-          {PLANS.map((plan) => (
+        <s-grid gridTemplateColumns="repeat(2, 1fr)" gap="base">
+          {DISPLAY_ORDER_PLANS.map((plan) => (
             <s-box
               key={plan.name}
               padding="base"
               borderWidth="base"
               borderRadius="base"
               minInlineSize="280px"
+              {...(plan.name === FREE_PLAN
+                ? { gridColumn: "1 / -1" }
+                : {})}
             >
               <s-stack direction="block" gap="base">
                 <s-heading>{plan.name}</s-heading>
