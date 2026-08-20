@@ -22,7 +22,8 @@ export default function App() {
   return (
     <AppProvider embedded apiKey={apiKey}>
       <s-app-nav>
-        <s-link href="/app">Settings</s-link>
+        <s-link href="/app">Home</s-link>
+        <s-link href="/app/settings">Settings</s-link>
         <s-link href="/app/knowledge">Knowledge</s-link>
         <s-link href="/app/activity">Activity</s-link>
         {/* Persistent, so a merchant on any plan can upgrade or downgrade

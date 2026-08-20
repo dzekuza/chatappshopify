@@ -294,13 +294,27 @@ export default function Knowledge() {
             of guessing.
           </s-paragraph>
 
-          {entries.length === 0 ? (
-            <s-paragraph tone="neutral" color="subdued">
-              No custom questions yet.
-            </s-paragraph>
-          ) : null}
         </s-stack>
       </s-section>
+
+      {entries.length === 0 ? (
+        <s-section>
+          <s-grid gap="base" justifyItems="center">
+            <s-heading>No custom questions yet</s-heading>
+            <s-paragraph>
+              Add exact answers for questions you want handled a specific
+              way, or attach extra info to a product.
+            </s-paragraph>
+            <s-button
+              variant="primary"
+              commandFor="knowledge-modal"
+              onClick={openNewEntry}
+            >
+              Add a question
+            </s-button>
+          </s-grid>
+        </s-section>
+      ) : null}
 
       {entries.length > 0 ? (
         <s-section padding="none">

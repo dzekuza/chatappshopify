@@ -1,0 +1,317 @@
+import { useState, type FormEvent } from "react";
+import type {
+  ActionFunctionArgs,
+  HeadersFunction,
+  LoaderFunctionArgs,
+} from "react-router";
+import { useFetcher, useLoaderData } from "react-router";
+import { useAppBridge } from "@shopify/app-bridge-react";
+import { boundary } from "@shopify/shopify-app-react-router/server";
+import { authenticate, MONTHLY_PLAN, PRO_PLAN } from "../shopify.server";
+import prisma from "../db.server";
+import { WidgetSection } from "../components/settings/widget-section";
+import { AppearanceSection } from "../components/settings/appearance-section";
+import { AiModelSection } from "../components/settings/ai-model-section";
+import {
+  KnowledgeSyncSection,
+  type KnowledgeCollection,
+} from "../components/settings/knowledge-sync-section";
+import { ChatPreview } from "../components/settings/chat-preview";
+import type { WidgetSettings } from "@prisma/client";
+
+const LANGUAGE_VALUES = [
+  "auto",
+  "en",
+  "lt",
+  "lv",
+  "et",
+  "pl",
+  "de",
+  "ru",
+  "es",
+  "fr",
+  "it",
+  "pt",
+  "nl",
+  "sv",
+  "no",
+  "da",
+  "fi",
+];
+
+// The app embed deep link is keyed on the app's api_key (same value as
+// client_id in shopify.app.*.toml, and what SHOPIFY_API_KEY holds) plus the
+// block's filename without .liquid. The older extension-uuid form is
+// deprecated and, because prod and dev are two separate Shopify apps with
+// different extension registrations, a hardcoded uuid made the theme editor
+// answer "App embed does not exist".
+const THEME_BLOCK_HANDLE = "chat_widget";
+
+export const loader = async ({ request }: LoaderFunctionArgs) => {
+  const { session, billing } = await authenticate.admin(request);
+
+  const settings = await prisma.widgetSettings.upsert({
+    where: { shop: session.shop },
+    update: {},
+    create: { shop: session.shop },
+  });
+
+  const { appSubscriptions } = await billing.check({
+    plans: [MONTHLY_PLAN, PRO_PLAN],
+  });
+  const isProPlan = appSubscriptions.some((sub) => sub.name === PRO_PLAN);
+
+  const addToThemeUrl = `https://${session.shop}/admin/themes/current/editor?context=apps&activateAppId=${process.env.SHOPIFY_API_KEY}/${THEME_BLOCK_HANDLE}`;
+  const shopName = session.shop.replace(/\.myshopify\.com$/, "");
+
+  return { settings, addToThemeUrl, shopName, isProPlan };
+};
+
+export const action = async ({ request }: ActionFunctionArgs) => {
+  const { session, billing } = await authenticate.admin(request);
+  const payload = await request.json();
+
+  const { appSubscriptions } = await billing.check({
+    plans: [MONTHLY_PLAN, PRO_PLAN],
+  });
+  const isProPlan = appSubscriptions.some((sub) => sub.name === PRO_PLAN);
+
+  const enabled = Boolean(payload.enabled);
+  const welcomeMessage = String(payload.welcomeMessage ?? "").trim();
+  const systemPrompt = String(payload.systemPrompt ?? "").trim();
+  const primaryColor = String(payload.primaryColor ?? "").trim();
+  const iconUrl = String(payload.iconUrl ?? "").trim() || null;
+  const position = String(payload.position ?? "bottom-right");
+  const geminiModel = String(payload.geminiModel ?? "gemini-2.5-flash");
+  // Bring-your-own API key is a Pro plan feature — silently ignore it for
+  // other plans rather than trusting the client-side gate.
+  const geminiApiKey = isProPlan
+    ? String(payload.geminiApiKey ?? "").trim() || null
+    : null;
+  const language = LANGUAGE_VALUES.includes(payload.language)
+    ? String(payload.language)
+    : "auto";
+  const knowledgeCollections: KnowledgeCollection[] = Array.isArray(
+    payload.knowledgeCollections,
+  )
+    ? payload.knowledgeCollections
+        .filter(
+          (c: unknown): c is KnowledgeCollection =>
+            typeof c === "object" &&
+            c !== null &&
+            typeof (c as Record<string, unknown>).id === "string",
+        )
+        .map((c: KnowledgeCollection) => ({
+          id: c.id,
+          title: String(c.title ?? ""),
+          handle: String(c.handle ?? ""),
+        }))
+    : [];
+
+  const settings = await prisma.widgetSettings.upsert({
+    where: { shop: session.shop },
+    update: {
+      enabled,
+      welcomeMessage,
+      systemPrompt,
+      primaryColor,
+      iconUrl,
+      position,
+      geminiModel,
+      geminiApiKey,
+      language,
+      knowledgeCollections,
+    },
+    create: {
+      shop: session.shop,
+      enabled,
+      welcomeMessage,
+      systemPrompt,
+      primaryColor,
+      iconUrl,
+      position,
+      geminiModel,
+      geminiApiKey,
+      language,
+      knowledgeCollections,
+    },
+  });
+
+  return { settings };
+};
+
+export default function SettingsPage() {
+  const { settings, addToThemeUrl, shopName, isProPlan } =
+    useLoaderData<typeof loader>();
+  const fetcher = useFetcher<typeof action>();
+  const shopify = useAppBridge();
+
+  const [form, setForm] = useState(settings);
+  const [isSyncingCollections, setIsSyncingCollections] = useState(false);
+  const [isUploadingIcon, setIsUploadingIcon] = useState(false);
+  const [iconUploadError, setIconUploadError] = useState<string | null>(null);
+
+  const knowledgeCollections: KnowledgeCollection[] = Array.isArray(
+    form.knowledgeCollections,
+  )
+    ? (form.knowledgeCollections as unknown as KnowledgeCollection[])
+    : [];
+
+  const update = <K extends keyof WidgetSettings>(
+    key: K,
+    value: WidgetSettings[K],
+  ) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const syncCollections = async () => {
+    setIsSyncingCollections(true);
+    try {
+      const selected = await shopify.resourcePicker({
+        type: "collection",
+        action: "select",
+        multiple: true,
+        selectionIds: knowledgeCollections.map((c) => ({ id: c.id })),
+      });
+      if (!selected) return;
+      const next: KnowledgeCollection[] = selected.map((c) => ({
+        id: c.id,
+        title: c.title,
+        handle: c.handle,
+      }));
+      update("knowledgeCollections", next as unknown as WidgetSettings["knowledgeCollections"]);
+    } finally {
+      setIsSyncingCollections(false);
+    }
+  };
+
+  const removeCollection = (id: string) => {
+    update(
+      "knowledgeCollections",
+      knowledgeCollections.filter((c) => c.id !== id) as unknown as WidgetSettings["knowledgeCollections"],
+    );
+  };
+
+  const uploadIcon = async (file: File) => {
+    setIconUploadError(null);
+    setIsUploadingIcon(true);
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      const response = await fetch("/app/chat-widget/icon-upload", {
+        method: "POST",
+        body,
+      });
+      const data = await response.json();
+      if (!response.ok || data.error) {
+        setIconUploadError(data.error || "Could not upload icon.");
+        return;
+      }
+      update("iconUrl", data.url as WidgetSettings["iconUrl"]);
+    } catch (err) {
+      setIconUploadError("Could not upload icon.");
+    } finally {
+      setIsUploadingIcon(false);
+    }
+  };
+
+  const removeIcon = () => {
+    setIconUploadError(null);
+    update("iconUrl", null as WidgetSettings["iconUrl"]);
+  };
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    fetcher.submit(JSON.stringify(form), {
+      method: "POST",
+      encType: "application/json",
+    });
+  };
+
+  // The App Bridge save bar dispatches a native `reset` event on the form
+  // when the merchant clicks Discard — bring local state back in line with
+  // what the loader gave us so the form (and the save bar itself) go quiet.
+  const handleReset = () => {
+    setForm(settings);
+    setIconUploadError(null);
+  };
+
+  return (
+    <s-page heading="AI Chat Widget">
+      <s-link slot="breadcrumb-actions" href="/app">
+        Home
+      </s-link>
+      <s-button slot="secondary-actions" href={addToThemeUrl} target="_blank">
+        Add to theme
+      </s-button>
+
+      <form data-save-bar onSubmit={handleSubmit} onReset={handleReset}>
+        <WidgetSection
+          enabled={form.enabled}
+          welcomeMessage={form.welcomeMessage}
+          systemPrompt={form.systemPrompt}
+          onChange={update}
+        />
+
+        <AppearanceSection
+          primaryColor={form.primaryColor}
+          iconUrl={form.iconUrl}
+          position={form.position}
+          isUploadingIcon={isUploadingIcon}
+          iconUploadError={iconUploadError}
+          onUploadIcon={uploadIcon}
+          onRemoveIcon={removeIcon}
+          onChange={update}
+        />
+
+        <AiModelSection
+          geminiModel={form.geminiModel}
+          language={form.language}
+          geminiApiKey={form.geminiApiKey}
+          isProPlan={isProPlan}
+          onChange={update}
+        />
+
+        <KnowledgeSyncSection
+          knowledgeCollections={knowledgeCollections}
+          isSyncingCollections={isSyncingCollections}
+          onSync={syncCollections}
+          onRemove={removeCollection}
+        />
+
+        <ChatPreview
+          welcomeMessage={form.welcomeMessage}
+          primaryColor={form.primaryColor}
+          iconUrl={form.iconUrl}
+          position={form.position}
+          shopName={shopName}
+          systemPrompt={form.systemPrompt}
+          geminiModel={form.geminiModel}
+          language={form.language}
+          knowledgeCollections={knowledgeCollections}
+        />
+      </form>
+
+      {/* Must be a direct child of <s-page> (not nested inside the <form>
+          above) — slot assignment for web components only picks up
+          slot="aside" on direct children of the shadow host. */}
+      <s-section slot="aside" heading="Setup">
+        <s-stack direction="block" gap="base">
+          <s-paragraph>
+            Click &ldquo;Add to theme&rdquo; above to open the theme editor with the AI
+            Chat Widget block ready to enable on your storefront.
+          </s-paragraph>
+          <s-paragraph>
+            The Gemini API key is configured via the{" "}
+            <s-text type="strong">GEMINI_API_KEY</s-text> environment
+            variable, not here — it&rsquo;s never exposed to shoppers.
+          </s-paragraph>
+        </s-stack>
+      </s-section>
+    </s-page>
+  );
+}
+
+export const headers: HeadersFunction = (headersArgs) => {
+  return boundary.headers(headersArgs);
+};

@@ -3,10 +3,9 @@ import { useLoaderData, useNavigate } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+import { computeChatStats } from "../lib/chat-stats.server";
 
 const PAGE_SIZE = 50;
-const ACTIVE_WINDOW_MS = 15 * 60 * 1000;
-const MAX_EMAILS_FOR_CONVERSION_CHECK = 100;
 
 function formatDate(date: Date) {
   return new Date(date).toLocaleString(undefined, {
@@ -27,77 +26,10 @@ function roleTone(role: string) {
   return "auto";
 }
 
-async function countConvertedCustomers(
-  admin: Awaited<ReturnType<typeof authenticate.admin>>["admin"],
-  emails: string[],
-) {
-  if (!emails.length) return 0;
-
-  const capped = emails.slice(0, MAX_EMAILS_FOR_CONVERSION_CHECK);
-  const query = capped
-    .map((email) => `email:"${email.replace(/"/g, "")}"`)
-    .join(" OR ");
-
-  const response = await admin.graphql(
-    `#graphql
-      query ConvertedOrders($query: String!) {
-        orders(first: 250, query: $query) {
-          edges {
-            node {
-              email
-            }
-          }
-        }
-      }
-    `,
-    { variables: { query } },
-  );
-  const data = await response.json();
-  const edges = data.data?.orders?.edges ?? [];
-  const orderedEmails = new Set(
-    edges
-      .map((edge: { node: { email: string | null } }) => edge.node.email?.toLowerCase())
-      .filter(Boolean),
-  );
-  return capped.filter((email) => orderedEmails.has(email.toLowerCase())).length;
-}
-
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session, admin } = await authenticate.admin(request);
 
-  const [totalChats, activeConversations, customerEmailRows] = await Promise.all([
-    prisma.conversation.count({ where: { shop: session.shop } }),
-    prisma.chatMessage.findMany({
-      where: {
-        shop: session.shop,
-        createdAt: { gte: new Date(Date.now() - ACTIVE_WINDOW_MS) },
-      },
-      select: { conversationId: true },
-      distinct: ["conversationId"],
-    }),
-    prisma.conversation.findMany({
-      where: { shop: session.shop, customerEmail: { not: null } },
-      select: { customerEmail: true },
-      distinct: ["customerEmail"],
-    }),
-  ]);
-
-  const distinctEmails = customerEmailRows
-    .map((row) => row.customerEmail)
-    .filter((email): email is string => Boolean(email));
-
-  const convertedCount = await countConvertedCustomers(admin, distinctEmails);
-  const conversionRate = distinctEmails.length
-    ? Math.round((convertedCount / distinctEmails.length) * 100)
-    : 0;
-
-  const stats = {
-    activeSessions: activeConversations.length,
-    totalChats,
-    conversionRate,
-    convertedCount,
-    totalCustomersWithEmail: distinctEmails.length,
-  };
+  const stats = await computeChatStats(session.shop, admin);
 
   const groups = await prisma.chatMessage.groupBy({
     by: ["conversationId"],
@@ -124,17 +56,21 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     }
   }
 
-  const needsHumanRows = conversationIds.length
+  const conversationRows = conversationIds.length
     ? await prisma.conversation.findMany({
         where: {
           shop: session.shop,
           conversationId: { in: conversationIds },
-          needsHuman: true,
         },
-        select: { conversationId: true },
+        select: { conversationId: true, customerName: true, needsHuman: true },
       })
     : [];
-  const needsHumanSet = new Set(needsHumanRows.map((r) => r.conversationId));
+  const needsHumanSet = new Set(
+    conversationRows.filter((r) => r.needsHuman).map((r) => r.conversationId),
+  );
+  const customerNameByConversation = new Map(
+    conversationRows.map((r) => [r.conversationId, r.customerName]),
+  );
 
   const conversations = groups
     .map((g) => {
@@ -146,6 +82,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         lastMessage: preview?.content ?? "",
         lastRole: preview?.role ?? "user",
         needsHuman: needsHumanSet.has(g.conversationId),
+        customerName: customerNameByConversation.get(g.conversationId) || "",
       };
     })
     .sort((a, b) => {
@@ -193,10 +130,21 @@ export default function Activity() {
 
       <s-section heading="Conversations">
         {conversations.length === 0 ? (
-          <s-paragraph>
-            No chats yet. Once shoppers use the widget on your storefront,
-            their conversations will show up here.
-          </s-paragraph>
+          <s-grid gap="base" justifyItems="center">
+            <s-heading>No conversations yet</s-heading>
+            <s-paragraph>
+              Once shoppers chat with the assistant on your storefront, their
+              conversations will show up here.
+            </s-paragraph>
+            <s-button-group>
+              <s-button slot="primary-action" href="/app/settings" variant="primary">
+                Test the widget
+              </s-button>
+              <s-button slot="secondary-actions" href="/app/knowledge">
+                Add answers
+              </s-button>
+            </s-button-group>
+          </s-grid>
         ) : (
           <s-table variant="auto">
             <s-table-header-row>
@@ -214,18 +162,28 @@ export default function Activity() {
                 return (
                   <s-table-row key={c.conversationId} clickDelegate={linkId}>
                     <s-table-cell>
-                      <s-link
-                        id={linkId}
-                        href={`/app/activity/${c.conversationId}`}
-                        onClick={(event: Event) => {
-                          event.preventDefault();
-                          navigate(`/app/activity/${c.conversationId}`);
-                        }}
-                      >
-                        {c.lastMessage.length > 80
-                          ? `${c.lastMessage.slice(0, 80)}…`
-                          : c.lastMessage || "No messages yet"}
-                      </s-link>
+                      <s-stack direction="block" gap="small-200">
+                        <s-link
+                          id={linkId}
+                          href={`/app/activity/${c.conversationId}`}
+                          onClick={(event: Event) => {
+                            event.preventDefault();
+                            navigate(`/app/activity/${c.conversationId}`);
+                          }}
+                        >
+                          {c.customerName ||
+                            (c.lastMessage.length > 80
+                              ? `${c.lastMessage.slice(0, 80)}…`
+                              : c.lastMessage || "No messages yet")}
+                        </s-link>
+                        {c.customerName ? (
+                          <s-text color="subdued">
+                            {c.lastMessage.length > 80
+                              ? `${c.lastMessage.slice(0, 80)}…`
+                              : c.lastMessage || "No messages yet"}
+                          </s-text>
+                        ) : null}
+                      </s-stack>
                     </s-table-cell>
                     <s-table-cell>
                       <s-badge tone={roleTone(c.lastRole)}>

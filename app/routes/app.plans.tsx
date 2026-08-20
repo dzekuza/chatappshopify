@@ -101,9 +101,8 @@ const PLANS = [
     price: "$4.99",
     tagline: "7-day free trial, then $4.99/month",
     features: [
+      "Everything in Free, plus:",
       "Unlimited conversations",
-      "AI shopping assistant chat widget",
-      "Live product lookup via your store's catalog",
       "Order status lookup and human handoff",
       "Uses the app's shared Gemini API key",
     ],
@@ -156,7 +155,10 @@ export default function Plans() {
             going.
           </s-paragraph>
         ) : null}
-        <s-stack direction="inline" gap="base">
+        <s-grid
+          gridTemplateColumns="@container (inline-size <= 700px) 1fr, repeat(3, 1fr)"
+          gap="base"
+        >
           {PLANS.map((plan) => (
             <s-box
               key={plan.name}
@@ -169,11 +171,11 @@ export default function Plans() {
                 <s-heading>{plan.name}</s-heading>
                 <s-text type="strong">{plan.price}/month</s-text>
                 <s-text color="subdued">{plan.tagline}</s-text>
-                <s-stack direction="block" gap="small-300">
+                <s-unordered-list>
                   {plan.features.map((feature) => (
-                    <s-text key={feature}>• {feature}</s-text>
+                    <s-list-item key={feature}>{feature}</s-list-item>
                   ))}
-                </s-stack>
+                </s-unordered-list>
                 {plan.name === activePlan ? (
                   <s-badge tone="success">Current plan</s-badge>
                 ) : plan.name === FREE_PLAN ? (
@@ -189,7 +191,7 @@ export default function Plans() {
               </s-stack>
             </s-box>
           ))}
-        </s-stack>
+        </s-grid>
       </s-section>
     </s-page>
   );
