@@ -47,6 +47,8 @@ model WidgetSettings {
   primaryColor    String   @default("#1a1a1a")
   iconUrl         String?
   position        String   @default("bottom-right")
+  headerTitle     String   @default("Chat with us")
+  cornerStyle     String   @default("rounded")
   geminiModel     String   @default("gemini-2.5-flash")
   geminiApiKey    String?
   language        String   @default("auto")

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { UpdateSettingFn } from "./widget-section";
 
 const POSITIONS = [
@@ -5,26 +6,37 @@ const POSITIONS = [
   { value: "bottom-left", label: "Bottom left" },
 ];
 
+const CORNER_STYLES = [
+  { value: "rounded", label: "Rounded" },
+  { value: "square", label: "Square" },
+];
+
 export type AppearanceSectionProps = {
   primaryColor: string;
   iconUrl: string | null;
   position: string;
+  headerTitle: string;
+  cornerStyle: string;
   isUploadingIcon: boolean;
   iconUploadError: string | null;
   onUploadIcon: (file: File) => void;
   onRemoveIcon: () => void;
   onChange: UpdateSettingFn;
+  preview?: ReactNode;
 };
 
 export function AppearanceSection({
   primaryColor,
   iconUrl,
   position,
+  headerTitle,
+  cornerStyle,
   isUploadingIcon,
   iconUploadError,
   onUploadIcon,
   onRemoveIcon,
   onChange,
+  preview,
 }: AppearanceSectionProps) {
   return (
     <s-section heading="Appearance">
@@ -94,6 +106,42 @@ export function AppearanceSection({
             </s-option>
           ))}
         </s-select>
+        <s-text-field
+          name="headerTitle"
+          label="Header title"
+          value={headerTitle}
+          details="Shown at the top of the chat panel, above the welcome message."
+          onChange={(event: Event) =>
+            onChange(
+              "headerTitle",
+              (event.currentTarget as HTMLInputElement).value,
+            )
+          }
+        />
+        <s-select
+          name="cornerStyle"
+          label="Corner style"
+          value={cornerStyle}
+          details="Controls how rounded the chat panel's corners are."
+          onChange={(event: Event) =>
+            onChange(
+              "cornerStyle",
+              (event.currentTarget as HTMLSelectElement).value,
+            )
+          }
+        >
+          {CORNER_STYLES.map((c) => (
+            <s-option key={c.value} value={c.value}>
+              {c.label}
+            </s-option>
+          ))}
+        </s-select>
+        {preview ? (
+          <>
+            <s-divider direction="inline" />
+            {preview}
+          </>
+        ) : null}
       </s-stack>
     </s-section>
   );

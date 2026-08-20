@@ -150,6 +150,10 @@
       "--aicw-color-contrast",
       contrastColor(settings.primaryColor),
     );
+    root.style.setProperty(
+      "--aicw-radius",
+      settings.cornerStyle === "square" ? "8px" : "20px",
+    );
 
     root.innerHTML =
       '<button type="button" class="aicw-bubble" aria-label="Open chat">' +
@@ -160,7 +164,9 @@
       '">' +
       '<div class="aicw-header">' +
       '<div class="aicw-header-titles">' +
-      '<p class="aicw-header-title">Chat with us</p>' +
+      '<p class="aicw-header-title">' +
+      escapeHtml(settings.headerTitle || "Chat with us") +
+      "</p>" +
       '<p class="aicw-header-subtitle">' +
       escapeHtml(settings.welcomeMessage || "How can I help you today?") +
       "</p>" +

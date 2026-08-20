@@ -82,6 +82,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const primaryColor = String(payload.primaryColor ?? "").trim();
   const iconUrl = String(payload.iconUrl ?? "").trim() || null;
   const position = String(payload.position ?? "bottom-right");
+  const headerTitle =
+    String(payload.headerTitle ?? "").trim() || "Chat with us";
+  const cornerStyle =
+    payload.cornerStyle === "square" ? "square" : "rounded";
   const geminiModel = String(payload.geminiModel ?? "gemini-2.5-flash");
   // Bring-your-own API key is a Pro plan feature — silently ignore it for
   // other plans rather than trusting the client-side gate.
@@ -117,6 +121,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       primaryColor,
       iconUrl,
       position,
+      headerTitle,
+      cornerStyle,
       geminiModel,
       geminiApiKey,
       language,
@@ -130,6 +136,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       primaryColor,
       iconUrl,
       position,
+      headerTitle,
+      cornerStyle,
       geminiModel,
       geminiApiKey,
       language,
@@ -263,11 +271,28 @@ export default function SettingsPage() {
             primaryColor={form.primaryColor}
             iconUrl={form.iconUrl}
             position={form.position}
+            headerTitle={form.headerTitle}
+            cornerStyle={form.cornerStyle}
             isUploadingIcon={isUploadingIcon}
             iconUploadError={iconUploadError}
             onUploadIcon={uploadIcon}
             onRemoveIcon={removeIcon}
             onChange={update}
+            preview={
+              <ChatPreview
+                welcomeMessage={form.welcomeMessage}
+                primaryColor={form.primaryColor}
+                iconUrl={form.iconUrl}
+                position={form.position}
+                headerTitle={form.headerTitle}
+                cornerStyle={form.cornerStyle}
+                shopName={shopName}
+                systemPrompt={form.systemPrompt}
+                geminiModel={form.geminiModel}
+                language={form.language}
+                knowledgeCollections={knowledgeCollections}
+              />
+            }
           />
 
           <AiModelSection
@@ -283,18 +308,6 @@ export default function SettingsPage() {
             isSyncingCollections={isSyncingCollections}
             onSync={syncCollections}
             onRemove={removeCollection}
-          />
-
-          <ChatPreview
-            welcomeMessage={form.welcomeMessage}
-            primaryColor={form.primaryColor}
-            iconUrl={form.iconUrl}
-            position={form.position}
-            shopName={shopName}
-            systemPrompt={form.systemPrompt}
-            geminiModel={form.geminiModel}
-            language={form.language}
-            knowledgeCollections={knowledgeCollections}
           />
         </s-stack>
       </form>

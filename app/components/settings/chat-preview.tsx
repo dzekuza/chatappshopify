@@ -9,6 +9,8 @@ export type ChatPreviewProps = {
   primaryColor: string;
   welcomeMessage: string;
   iconUrl: string | null;
+  headerTitle: string;
+  cornerStyle: string;
   shopName: string;
   systemPrompt: string;
   geminiModel: string;
@@ -239,6 +241,8 @@ export function ChatPreview({
   primaryColor,
   welcomeMessage,
   iconUrl,
+  headerTitle,
+  cornerStyle,
   shopName,
   systemPrompt,
   geminiModel,
@@ -320,39 +324,42 @@ export function ChatPreview({
   };
 
   return (
-    <s-section heading="Test widget">
-      <s-stack direction="block" gap="base">
-        <s-paragraph>
-          This mirrors exactly what a shopper sees on your storefront —
-          click the bubble to open it.
-        </s-paragraph>
+    <s-stack direction="block" gap="base">
+      <s-text type="strong">Live preview</s-text>
+      <s-paragraph>
+        This mirrors exactly what a shopper sees on your storefront —
+        click the bubble to open it.
+      </s-paragraph>
+      <div
+        className={
+          position === "bottom-left"
+            ? `${styles.previewStage} ${styles.previewStageLeft}`
+            : styles.previewStage
+        }
+        style={
+          {
+            "--aicw-preview-color": primaryColor || "#1a1a1a",
+            "--aicw-preview-color-contrast": contrastColor(primaryColor),
+            "--aicw-preview-radius": cornerStyle === "square" ? "8px" : "20px",
+          } as CSSProperties
+        }
+      >
         <div
           className={
-            position === "bottom-left"
-              ? `${styles.previewStage} ${styles.previewStageLeft}`
-              : styles.previewStage
-          }
-          style={
-            {
-              "--aicw-preview-color": primaryColor || "#1a1a1a",
-              "--aicw-preview-color-contrast": contrastColor(primaryColor),
-            } as CSSProperties
+            isPreviewOpen
+              ? `${styles.previewPanel} ${styles.previewPanelOpen}`
+              : styles.previewPanel
           }
         >
-          <div
-            className={
-              isPreviewOpen
-                ? `${styles.previewPanel} ${styles.previewPanelOpen}`
-                : styles.previewPanel
-            }
-          >
-            <div className={styles.previewHeader}>
-              <div>
-                <p className={styles.previewHeaderTitle}>Chat with us</p>
-                <p className={styles.previewHeaderSubtitle}>
-                  {welcomeMessage || "How can I help you today?"}
-                </p>
-              </div>
+          <div className={styles.previewHeader}>
+            <div>
+              <p className={styles.previewHeaderTitle}>
+                {headerTitle || "Chat with us"}
+              </p>
+              <p className={styles.previewHeaderSubtitle}>
+                {welcomeMessage || "How can I help you today?"}
+              </p>
+            </div>
               <div className={styles.previewHeaderActions}>
                 <button
                   type="button"
@@ -463,10 +470,9 @@ export function ChatPreview({
             <BubbleIcon iconUrl={iconUrl} />
           </button>
         </div>
-        <p className={styles.previewFooter}>
-          Preview only — nothing here is saved or shown to shoppers.
-        </p>
-      </s-stack>
-    </s-section>
+      <p className={styles.previewFooter}>
+        Preview only — nothing here is saved or shown to shoppers.
+      </p>
+    </s-stack>
   );
 }
