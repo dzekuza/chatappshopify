@@ -607,10 +607,45 @@
     });
   }
 
+  // Every failure path here used to be swallowed, so a widget that never
+  // appeared gave no clue why. The common causes are all diagnosable from the
+  // response: a password-protected store 302s app proxy requests to /password
+  // (so this resolves to HTML with a 200), and a proxy subpath owned by a
+  // different app 404s. Log which one it was.
   fetch(settingsEndpoint)
     .then(function (res) {
-      return res.ok ? res.json() : null;
+      if (!res.ok) {
+        console.warn(
+          "[AI Chat Widget] Settings request failed (" +
+            res.status +
+            "). The app proxy at " +
+            settingsEndpoint +
+            " may belong to a different app, or the app is not installed.",
+        );
+        return null;
+      }
+      var contentType = res.headers.get("content-type") || "";
+      if (contentType.indexOf("application/json") === -1) {
+        console.warn(
+          "[AI Chat Widget] Settings request returned " +
+            (contentType || "an unknown content type") +
+            " instead of JSON — the app proxy request was redirected, which " +
+            "happens on a password-protected store. Disable the storefront " +
+            "password, or preview from an authenticated session.",
+        );
+        return null;
+      }
+      return res.json();
     })
-    .then(init)
-    .catch(function () {});
+    .then(function (settings) {
+      if (settings && settings.enabled === false) {
+        console.warn(
+          "[AI Chat Widget] The widget is turned off in the app settings.",
+        );
+      }
+      init(settings);
+    })
+    .catch(function (err) {
+      console.warn("[AI Chat Widget] Could not load settings.", err);
+    });
 })();
