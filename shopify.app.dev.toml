@@ -1,0 +1,48 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+# This is the DEV config — a separate Shopify app ("Chat app dev") with dev-store-only
+# distribution, used for testing on the `development` branch. Deploy with:
+#   shopify app deploy --config dev
+#
+# TODO: fill in client_id below after creating the app in Partners Dashboard
+# (Apps > Create app > distribution: "Dev store" / "Custom distribution", not Public).
+
+client_id = "REPLACE_WITH_DEV_APP_CLIENT_ID"
+name = "Chat app dev"
+application_url = "https://ai-chat-widget-dev.vercel.app"
+embedded = true
+
+[build]
+# true here (unlike the prod config) is fine — this app only ever runs via
+# `shopify app dev` against a personal dev store, so a tunnel URL rewrite is expected.
+automatically_update_urls_on_dev = true
+
+[webhooks]
+api_version = "2026-07"
+customers_data_request_url = "/webhooks/customers/data_request"
+customers_redact_url = "/webhooks/customers/redact"
+shop_redact_url = "/webhooks/shop/redact"
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/scopes_update"
+  topics = [ "app/scopes_update" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/uninstalled"
+  topics = [ "app/uninstalled" ]
+
+[access_scopes]
+scopes = "read_files,read_orders,read_products"
+optional_scopes = [ ]
+use_legacy_install_flow = false
+
+[auth]
+redirect_urls = [
+  "https://ai-chat-widget-dev.vercel.app/auth/callback",
+  "https://ai-chat-widget-dev.vercel.app/auth/shopify/callback",
+  "https://ai-chat-widget-dev.vercel.app/api/auth/callback"
+]
+
+[app_proxy]
+url = "https://ai-chat-widget-dev.vercel.app/apps/chat-widget"
+subpath = "chat-widget"
+prefix = "apps"
