@@ -20,4 +20,4 @@ jobs:
       - name: shopify app deploy
         env:
           SHOPIFY_CLI_PARTNERS_TOKEN: ${{ secrets.SHOPIFY_CLI_PARTNERS_TOKEN }}
-        run: npx shopify app deploy --config ai-chat-app --force
+        run: npx shopify app deploy --config ai-chat-app --allow-updates
