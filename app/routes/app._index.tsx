@@ -43,9 +43,12 @@ const LANGUAGES = [
 
 type KnowledgeCollection = { id: string; title: string; handle: string };
 
-// uid from extensions/ai-chat-widget/shopify.extension.toml + the block's
-// filename (without .liquid), used to deep-link into the theme editor.
-const THEME_EXTENSION_UID = "45c51f62-01cb-9718-b977-78f5108db8351ae77f7a";
+// The app embed deep link is keyed on the app's api_key (same value as
+// client_id in shopify.app.*.toml, and what SHOPIFY_API_KEY holds) plus the
+// block's filename without .liquid. The older extension-uuid form is
+// deprecated and, because prod and dev are two separate Shopify apps with
+// different extension registrations, a hardcoded uuid made the theme editor
+// answer "App embed does not exist".
 const THEME_BLOCK_HANDLE = "chat_widget";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -62,7 +65,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   });
   const isProPlan = appSubscriptions.some((sub) => sub.name === PRO_PLAN);
 
-  const addToThemeUrl = `https://${session.shop}/admin/themes/current/editor?context=apps&activateAppId=${THEME_EXTENSION_UID}/${THEME_BLOCK_HANDLE}`;
+  const addToThemeUrl = `https://${session.shop}/admin/themes/current/editor?context=apps&activateAppId=${process.env.SHOPIFY_API_KEY}/${THEME_BLOCK_HANDLE}`;
   const shopName = session.shop.replace(/\.myshopify\.com$/, "");
 
   return { settings, addToThemeUrl, shopName, isProPlan };
