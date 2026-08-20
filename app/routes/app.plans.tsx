@@ -1,14 +1,36 @@
-import type { ActionFunctionArgs } from "react-router";
-import { useFetcher } from "react-router";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
+import { redirect, useFetcher } from "react-router";
 import {
   authenticate,
+  isBillingEnabled,
   isTestBilling,
   MONTHLY_PLAN as SERVER_MONTHLY_PLAN,
   PRO_PLAN as SERVER_PRO_PLAN,
 } from "../shopify.server";
 
+// Where the Billing API is unavailable (custom-distribution dev app), this page
+// can only ever fail, so send the merchant back to the app. Keep Shopify's
+// params on the redirect or App Bridge can't initialise — see app.tsx.
+export const loader = async ({ request }: LoaderFunctionArgs) => {
+  await authenticate.admin(request);
+
+  if (!isBillingEnabled) {
+    const url = new URL(request.url);
+    throw redirect(`/app?${url.searchParams.toString()}`);
+  }
+
+  return null;
+};
+
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { billing } = await authenticate.admin(request);
+
+  if (!isBillingEnabled) {
+    throw new Response("Billing is not available for this app", {
+      status: 403,
+    });
+  }
+
   const formData = await request.formData();
   const plan =
     formData.get("plan") === SERVER_PRO_PLAN

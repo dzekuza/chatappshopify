@@ -5,6 +5,7 @@ import { AppProvider } from "@shopify/shopify-app-react-router/react";
 
 import {
   authenticate,
+  isBillingEnabled,
   isTestBilling,
   MONTHLY_PLAN,
   PRO_PLAN,
@@ -19,7 +20,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   // billing gate can't apply to that page itself or it'd redirect in a loop.
   const isPlansPage = url.pathname === "/app/plans";
 
-  if (!isPlansPage) {
+  if (isBillingEnabled && !isPlansPage) {
     try {
       await billing.require({
         plans: [MONTHLY_PLAN, PRO_PLAN],
@@ -47,11 +48,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   }
 
   // eslint-disable-next-line no-undef
-  return { apiKey: process.env.SHOPIFY_API_KEY || "" };
+  return { apiKey: process.env.SHOPIFY_API_KEY || "", isBillingEnabled };
 };
 
 export default function App() {
-  const { apiKey } = useLoaderData<typeof loader>();
+  const { apiKey, isBillingEnabled } = useLoaderData<typeof loader>();
 
   return (
     <AppProvider embedded apiKey={apiKey}>
@@ -60,8 +61,9 @@ export default function App() {
         <s-link href="/app/knowledge">Knowledge</s-link>
         <s-link href="/app/activity">Activity</s-link>
         {/* Persistent, so a merchant on any plan can upgrade or downgrade
-            without contacting support or reinstalling. */}
-        <s-link href="/app/plans">Plans</s-link>
+            without contacting support or reinstalling. Hidden where the
+            Billing API is unavailable (custom-distribution dev app). */}
+        {isBillingEnabled && <s-link href="/app/plans">Plans</s-link>}
       </s-app-nav>
       <Outlet />
     </AppProvider>

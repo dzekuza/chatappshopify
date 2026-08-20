@@ -19,6 +19,14 @@ export const isTestBilling =
   process.env.SHOPIFY_BILLING_TEST === "true" ||
   process.env.NODE_ENV !== "production";
 
+// The dev app (Orby Chat DEV) uses custom distribution, and Shopify blocks the
+// Billing API outright for custom apps — appSubscriptionCreate answers "Custom
+// apps cannot use the Billing API", and distribution can't be changed after it
+// is chosen. So the gate has to be off there or the app is unusable. Set
+// SHOPIFY_BILLING_ENABLED=false on the dev project; prod leaves it unset.
+// https://shopify.dev/docs/apps/launch/distribution
+export const isBillingEnabled = process.env.SHOPIFY_BILLING_ENABLED !== "false";
+
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY,
   apiSecretKey: process.env.SHOPIFY_API_SECRET || "",
