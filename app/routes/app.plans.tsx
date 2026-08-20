@@ -30,8 +30,8 @@ const PRO_PLAN = "Pro Plan";
 const PLANS = [
   {
     name: MONTHLY_PLAN,
-    price: "€4.99",
-    tagline: "7-day free trial, then €4.99/month",
+    price: "$4.99",
+    tagline: "7-day free trial, then $4.99/month",
     features: [
       "AI shopping assistant chat widget",
       "Live product lookup via your store's catalog",
@@ -41,8 +41,8 @@ const PLANS = [
   },
   {
     name: PRO_PLAN,
-    price: "€12.99",
-    tagline: "7-day free trial, then €12.99/month",
+    price: "$12.99",
+    tagline: "7-day free trial, then $12.99/month",
     features: [
       "Everything in the Monthly plan",
       "Bring your own Gemini API key — unlimited usage on your own quota",

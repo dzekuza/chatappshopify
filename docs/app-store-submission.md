@@ -51,8 +51,8 @@ Config: `shopify.app.ai-chat-app.toml` · Distribution: **Public**
 
 | Plan | Price | Contents |
 |---|---|---|
-| Monthly | €4.99/mo, 7-day free trial | Assistant, live product lookup, order status, human handoff, shared Gemini key |
-| Pro | €12.99/mo, 7-day free trial | Everything in Monthly, plus bring-your-own Gemini API key (your own quota) and priority support |
+| Monthly | $4.99/mo, 7-day free trial | Assistant, live product lookup, order status, human handoff, shared Gemini key |
+| Pro | $12.99/mo, 7-day free trial | Everything in Monthly, plus bring-your-own Gemini API key (your own quota) and priority support |
 
 Both plans bill through the Shopify Billing API. Merchants can switch plans from
 the in-app **Plans** page at any time.
