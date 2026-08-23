@@ -59,22 +59,53 @@ model WidgetSettings {
 }
 
 model KnowledgeEntry {
-  id            String   @id @default(cuid())
-  shop          String
-  type          String   @default("freeform")
-  question      String?
-  answer        String
-  productId     String?
-  productTitle  String?
-  productHandle String?
-  mediaType     String?
-  mediaId       String?
-  mediaUrl      String?
-  mediaName     String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id              String   @id @default(cuid())
+  shop            String
+  type            String   @default("freeform")
+  question        String?
+  answer          String
+  productId       String?
+  productTitle    String?
+  productHandle   String?
+  mediaType       String?
+  mediaId         String?
+  mediaUrl        String?
+  mediaName       String?
+  source          String   @default("manual")
+  createdByEmail  String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@index([shop])
+  @@schema("chat_widget")
+}
+
+model StoreAudit {
+  id           String    @id @default(cuid())
+  shop         String    @unique
+  status       String    @default("pending")
+  storeContext String?
+  sourceUrls   Json      @default("[]")
+  policies     Json      @default("{}")
+  lastRunAt    DateTime?
+  lastError    String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@schema("chat_widget")
+}
+
+model KnowledgeQuery {
+  id             String   @id @default(cuid())
+  shop           String
+  conversationId String
+  question       String
+  matched        Boolean  @default(false)
+  matchedEntryId String?
+  createdAt      DateTime @default(now())
+
+  @@index([shop, createdAt])
+  @@index([shop, matched, createdAt])
   @@schema("chat_widget")
 }
 

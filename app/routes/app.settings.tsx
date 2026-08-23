@@ -17,6 +17,7 @@ import {
   type KnowledgeCollection,
 } from "../components/settings/knowledge-sync-section";
 import { ChatPreview } from "../components/settings/chat-preview";
+import { StoreAuditSection } from "../components/settings/store-audit-section";
 import type { WidgetSettings } from "@prisma/client";
 
 const LANGUAGE_VALUES = [
@@ -64,7 +65,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const addToThemeUrl = `https://${session.shop}/admin/themes/current/editor?context=apps&activateAppId=${process.env.SHOPIFY_API_KEY}/${THEME_BLOCK_HANDLE}`;
   const shopName = session.shop.replace(/\.myshopify\.com$/, "");
 
-  return { settings, addToThemeUrl, shopName, isProPlan };
+  const storeAudit = await prisma.storeAudit.findUnique({
+    where: { shop: session.shop },
+    select: { status: true, lastRunAt: true, lastError: true, storeContext: true },
+  });
+
+  return { settings, addToThemeUrl, shopName, isProPlan, storeAudit };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -149,10 +155,26 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function SettingsPage() {
-  const { settings, addToThemeUrl, shopName, isProPlan } =
+  const { settings, addToThemeUrl, shopName, isProPlan, storeAudit } =
     useLoaderData<typeof loader>();
   const fetcher = useFetcher<typeof action>();
+  const auditFetcher = useFetcher<{
+    audit: {
+      status: string;
+      lastRunAt: string | Date | null;
+      lastError: string | null;
+      storeContext: string | null;
+    } | null;
+  }>();
   const shopify = useAppBridge();
+
+  const currentAudit = auditFetcher.data?.audit ?? storeAudit;
+  const isRunningAudit =
+    auditFetcher.state !== "idle" || currentAudit?.status === "running";
+
+  const refreshAudit = () => {
+    auditFetcher.submit(null, { method: "POST", action: "/app/store-audit" });
+  };
 
   const [form, setForm] = useState(settings);
   const [isSyncingCollections, setIsSyncingCollections] = useState(false);
@@ -311,6 +333,12 @@ export default function SettingsPage() {
           />
         </s-stack>
       </form>
+
+      <StoreAuditSection
+        audit={currentAudit}
+        isRunning={isRunningAudit}
+        onRefresh={refreshAudit}
+      />
 
       {/* Must be a direct child of <s-page> (not nested inside the <form>
           above) — slot assignment for web components only picks up

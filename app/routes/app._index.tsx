@@ -1,9 +1,11 @@
 import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
 import { useLoaderData } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
+import { waitUntil } from "@vercel/functions";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { computeChatStats } from "../lib/chat-stats.server";
+import { runStoreAudit } from "../store-audit.server";
 
 // Kept in sync with the Prisma default in prisma/schema.prisma
 // (WidgetSettings.systemPrompt) — used only to detect whether the merchant
@@ -28,6 +30,17 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       knowledgeCollections: true,
     },
   });
+
+  // Fallback for shops that installed before the store-audit feature shipped
+  // (or whose afterAuth-triggered run failed) — the install hook is the
+  // primary trigger, this just catches anything it missed.
+  const storeAudit = await prisma.storeAudit.findUnique({
+    where: { shop: session.shop },
+    select: { status: true },
+  });
+  if (!storeAudit || storeAudit.status === "failed") {
+    waitUntil(runStoreAudit(session.shop, admin));
+  }
 
   const stats = await computeChatStats(session.shop, admin);
 

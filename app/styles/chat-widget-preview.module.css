@@ -187,6 +187,77 @@
   margin-top: 6px;
 }
 
+.previewProductRow {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  margin-top: 6px;
+  padding-bottom: 2px;
+  max-width: 100%;
+}
+
+.previewProductCard {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  width: 120px;
+  border-radius: var(--aicw-preview-radius, 12px);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  text-decoration: none;
+  color: inherit;
+  background: #ffffff;
+}
+
+.previewProductImage {
+  display: block;
+  width: 100%;
+  height: 90px;
+  object-fit: cover;
+}
+
+.previewProductImagePlaceholder {
+  width: 100%;
+  height: 90px;
+  background: #f3f4f6;
+}
+
+.previewProductInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+}
+
+.previewProductTitle {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.previewProductMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 10px;
+}
+
+.previewProductPrice {
+  font-weight: 600;
+}
+
+.previewProductInStock {
+  color: #16a34a;
+}
+
+.previewProductOutOfStock {
+  color: #dc2626;
+}
+
 .previewMessageParagraph {
   margin: 0 0 6px;
 }

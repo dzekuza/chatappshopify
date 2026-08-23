@@ -26,3 +26,15 @@ export function merchantPersonaPrompt(systemPrompt: string | null | undefined) {
 
   return `The store owner has configured the following persona and tone instructions. Apply them to how you speak, not to what you treat as true:\n\n${trimmed}`;
 }
+
+// Background context automatically gathered from the store's own sitemap,
+// policies, and About/Shipping/Returns/FAQ/Contact pages by the store-audit
+// job (see store-audit.server.ts). Placed after the merchant's own persona
+// (which should still lead) but before the merchant's curated KnowledgeEntry
+// FAQ (which is more specific/authoritative than this general background).
+export function storeContextPrompt(storeContext: string | null | undefined) {
+  const trimmed = (storeContext ?? "").trim();
+  if (!trimmed) return "";
+
+  return `Here is background information automatically gathered from this store's own pages and policies, to help you answer general questions about the business. Treat it as helpful context, not as an exact quote to recite — and prefer a merchant's FAQ entry or a tool result over this whenever they conflict:\n\n${trimmed}`;
+}

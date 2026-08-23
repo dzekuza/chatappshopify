@@ -23,5 +23,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     primaryColor: settings.primaryColor,
     position: settings.position,
     iconUrl: settings.iconUrl,
+    headerTitle: settings.headerTitle,
+    cornerStyle: settings.cornerStyle,
   });
 };

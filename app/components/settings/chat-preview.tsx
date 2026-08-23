@@ -1,8 +1,13 @@
 import { useState, type CSSProperties, type ReactNode } from "react";
 import styles from "../../styles/chat-widget-preview.module.css";
 import type { KnowledgeCollection } from "./knowledge-sync-section";
+import { ProductCardRow, type ChatProduct } from "./product-card";
 
-type PreviewMessage = { role: "user" | "assistant"; content: string };
+type PreviewMessage = {
+  role: "user" | "assistant";
+  content: string;
+  products?: ChatProduct[];
+};
 
 export type ChatPreviewProps = {
   position: string;
@@ -220,6 +225,25 @@ function renderMessageBody(content: string) {
   );
 }
 
+// Matches the sentinel appended by product-card-stream.server.ts after the
+// stream's natural text ends — must only be run once the stream is fully
+// drained (the JSON payload can't be reliably parsed from a partial chunk).
+const PRODUCTS_SENTINEL_REGEX = /\n\n<!--AICW_PRODUCTS:(\[.*?\])-->$/s;
+
+function extractProductCards(text: string): {
+  text: string;
+  products: ChatProduct[];
+} {
+  const match = text.match(PRODUCTS_SENTINEL_REGEX);
+  if (!match) return { text, products: [] };
+  try {
+    const products = JSON.parse(match[1]) as ChatProduct[];
+    return { text: text.slice(0, match.index), products };
+  } catch {
+    return { text, products: [] };
+  }
+}
+
 function contrastColor(hex: string) {
   let value = (hex || "").replace("#", "");
   if (value.length === 3) {
@@ -309,6 +333,13 @@ export function ChatPreview({
           return copy;
         });
       }
+
+      const { text: finalText, products } = extractProductCards(full);
+      setPreviewMessages((prev) => {
+        const copy = [...prev];
+        copy[copy.length - 1] = { role: "assistant", content: finalText, products };
+        return copy;
+      });
     } catch (err) {
       setPreviewMessages((prev) => {
         const copy = [...prev];
@@ -412,6 +443,9 @@ export function ChatPreview({
                         : isPreviewSending && index === previewMessages.length - 1
                           ? "…"
                           : ""}
+                      {message.products && message.products.length > 0 ? (
+                        <ProductCardRow products={message.products} />
+                      ) : null}
                     </div>
                   ))}
                 </div>

@@ -1,13 +1,43 @@
 #ai-chat-widget-root {
   --aicw-color: #1a1a1a;
   --aicw-color-contrast: #ffffff;
+  --aicw-activator-color: var(--aicw-color);
+  --aicw-activator-color-contrast: var(--aicw-color-contrast);
   --aicw-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   position: fixed;
   z-index: 2147483000;
-  bottom: 20px;
-  right: 20px;
   font-family: var(--aicw-font-family);
 }
+
+/* Two-axis positioning: horizontal (left/center/right) and vertical
+   (lowest/higher/highest) are independent theme-editor overrides — see
+   mergeSettings() in ai-chat-widget.js. Center has no vertical-stack
+   pairing concern since the panel always opens above the bubble. */
+#ai-chat-widget-root.aicw-h-right {
+  right: 20px;
+}
+
+#ai-chat-widget-root.aicw-h-left {
+  left: 20px;
+}
+
+#ai-chat-widget-root.aicw-h-center {
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+#ai-chat-widget-root.aicw-v-lowest {
+  bottom: 20px;
+}
+
+#ai-chat-widget-root.aicw-v-higher {
+  bottom: 90px;
+}
+
+#ai-chat-widget-root.aicw-v-highest {
+  bottom: 160px;
+}
+
 
 /* Themes commonly set font-family directly on p/button/input/textarea (and
    form controls never inherit font-family from an ancestor by default in
@@ -37,28 +67,37 @@
   box-shadow: none;
 }
 
-#ai-chat-widget-root.aicw-position-bottom-left {
-  right: auto;
-  left: 20px;
-}
-
 .aicw-bubble {
   width: 56px;
   height: 56px;
   border-radius: 999px;
-  background: var(--aicw-color);
-  color: var(--aicw-color-contrast);
+  background: var(--aicw-activator-color);
+  color: var(--aicw-activator-color-contrast);
   border: none;
   cursor: pointer;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 8px;
+}
+
+.aicw-bubble-labeled {
+  width: auto;
+  padding: 0 18px 0 16px;
+  border-radius: 999px;
+}
+
+.aicw-bubble-label {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .aicw-bubble svg {
   width: 26px;
   height: 26px;
+  flex-shrink: 0;
 }
 
 .aicw-bubble-icon {
@@ -66,6 +105,7 @@
   height: 44px;
   border-radius: 999px;
   object-fit: cover;
+  flex-shrink: 0;
 }
 
 .aicw-panel {
@@ -86,9 +126,15 @@
   overflow: hidden;
 }
 
-#ai-chat-widget-root.aicw-position-bottom-left .aicw-panel {
+#ai-chat-widget-root.aicw-h-left .aicw-panel {
   right: auto;
   left: 0;
+}
+
+#ai-chat-widget-root.aicw-h-center .aicw-panel {
+  right: auto;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 #ai-chat-widget-root.aicw-open .aicw-panel {
@@ -453,4 +499,91 @@
 .aicw-send:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+.aicw-product-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  margin-top: 6px;
+  padding-bottom: 2px;
+  max-width: 100%;
+}
+
+.aicw-product-card {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  width: 120px;
+  border-radius: var(--aicw-radius, 12px);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  text-decoration: none;
+  color: inherit;
+  background: #fff;
+}
+
+.aicw-product-image {
+  display: block;
+  width: 100%;
+  height: 90px;
+  object-fit: cover;
+}
+
+.aicw-product-image-placeholder {
+  width: 100%;
+  height: 90px;
+  background: #f3f4f6;
+}
+
+.aicw-product-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+}
+
+.aicw-product-title {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.aicw-product-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 10px;
+}
+
+.aicw-product-price {
+  font-weight: 600;
+}
+
+.aicw-product-in-stock {
+  color: #16a34a;
+}
+
+.aicw-product-out-of-stock {
+  color: #dc2626;
+}
+
+.aicw-featured-products {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 10px 16px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.aicw-featured-products[hidden] {
+  display: none;
+}
+
+.aicw-featured-products .aicw-product-card {
+  width: 100px;
 }

@@ -6,7 +6,9 @@ import {
   shopifyApp,
 } from "@shopify/shopify-app-react-router/server";
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
+import { waitUntil } from "@vercel/functions";
 import prisma from "./db.server";
+import { runStoreAudit } from "./store-audit.server";
 
 export const MONTHLY_PLAN = "Monthly Plan";
 export const PRO_PLAN = "Pro Plan";
@@ -60,6 +62,21 @@ const shopify = shopifyApp({
   },
   future: {
     expiringOfflineAccessTokens: true,
+  },
+  hooks: {
+    // Kicks off the store audit (sitemap crawl + policies → AI context) on
+    // every install/reinstall. The crawl+summarization can take several
+    // seconds, which is too slow to block the OAuth redirect this hook runs
+    // inside of — mark the row "pending" synchronously, then let waitUntil
+    // finish the actual work after the response has already been sent.
+    afterAuth: async ({ session, admin }) => {
+      await prisma.storeAudit.upsert({
+        where: { shop: session.shop },
+        update: {},
+        create: { shop: session.shop, status: "pending" },
+      });
+      waitUntil(runStoreAudit(session.shop, admin));
+    },
   },
   ...(process.env.SHOP_CUSTOM_DOMAIN
     ? { customShopDomains: [process.env.SHOP_CUSTOM_DOMAIN] }

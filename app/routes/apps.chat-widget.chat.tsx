@@ -12,7 +12,10 @@ import {
 import {
   FACTUAL_ACCURACY_GUARDRAILS,
   merchantPersonaPrompt,
+  storeContextPrompt,
 } from "../chat-guardrails.server";
+import { matchKnowledgeEntry } from "../knowledge-query-matcher.server";
+import { textStreamWithProductCards } from "../product-card-stream.server";
 
 const MAX_MESSAGES = 20;
 
@@ -287,11 +290,43 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const knowledgeEntries = await prisma.knowledgeEntry.findMany({
     where: { shop: session.shop },
   });
+  const storeAudit = await prisma.storeAudit.findUnique({
+    where: { shop: session.shop },
+    select: { storeContext: true },
+  });
+
+  // Log the shopper's question for the "top unanswered questions" panel —
+  // only real storefront traffic, never the admin preview (see
+  // app.chat-widget.preview.tsx). Fire-and-forget: a logging failure should
+  // never block the chat response.
+  if (lastMessage.role === "user") {
+    const { matched, matchedEntryId } = matchKnowledgeEntry(
+      String(lastMessage.content),
+      knowledgeEntries,
+    );
+    prisma.knowledgeQuery
+      .create({
+        data: {
+          shop: session.shop,
+          conversationId,
+          question: String(lastMessage.content),
+          matched,
+          matchedEntryId,
+        },
+      })
+      .catch(() => {});
+  }
+
+  // Captures the most recent searchProducts results so they can be rendered
+  // as product cards on the client — see the sentinel appended to the
+  // response stream below.
+  let lastProductResults: unknown[] | null = null;
 
   const result = streamText({
     model: google(settings.geminiModel),
     system: [
       merchantPersonaPrompt(settings.systemPrompt),
+      storeContextPrompt(storeAudit?.storeContext),
       languageInstruction(settings.language),
       knowledgeBasePrompt(knowledgeEntries),
       ORDER_TOOL_INSTRUCTION,
@@ -355,17 +390,19 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           const json = await response.json();
           const products = json?.data?.products?.nodes ?? [];
 
-          return {
-            products: products.map((p: Record<string, unknown>) => ({
-              title: p.title,
-              handle: p.handle,
-              url: p.onlineStoreUrl,
-              price: (p.priceRangeV2 as { minVariantPrice?: unknown } | undefined)
-                ?.minVariantPrice,
-              image: (p.featuredImage as { url?: unknown } | undefined)?.url,
-              inStock: ((p.totalInventory as number) ?? 0) > 0,
-            })),
-          };
+          const mapped = products.map((p: Record<string, unknown>) => ({
+            title: p.title,
+            handle: p.handle,
+            url: p.onlineStoreUrl,
+            price: (p.priceRangeV2 as { minVariantPrice?: unknown } | undefined)
+              ?.minVariantPrice,
+            image: (p.featuredImage as { url?: unknown } | undefined)?.url,
+            inStock: ((p.totalInventory as number) ?? 0) > 0,
+          }));
+
+          lastProductResults = mapped.length > 0 ? mapped : null;
+
+          return { products: mapped };
         },
       }),
       lookupOrder: tool({
@@ -524,7 +561,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     },
   });
 
-  return result.toTextStreamResponse({
-    headers: { "X-Conversation-Id": conversationId },
+  return textStreamWithProductCards(result, () => lastProductResults, {
+    "X-Conversation-Id": conversationId,
   });
 };

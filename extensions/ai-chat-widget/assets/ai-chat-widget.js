@@ -6,6 +6,112 @@
   var settingsEndpoint = root.dataset.settingsEndpoint;
   var messagesEndpoint = root.dataset.messagesEndpoint;
   var historyEndpoint = root.dataset.historyEndpoint;
+
+  function parseBlockSettings() {
+    try {
+      return root.dataset.blockSettings
+        ? JSON.parse(root.dataset.blockSettings)
+        : {};
+    } catch (err) {
+      return {};
+    }
+  }
+
+  var blockSettings = parseBlockSettings();
+
+  // Values the theme-editor block schema always populates (its own
+  // "default"), so a block setting only counts as an intentional merchant
+  // override when it differs from these — otherwise every shop would get
+  // the theme-editor defaults even when the merchant never opened the
+  // customizer for this block.
+  var BLOCK_SETTING_DEFAULTS = {
+    invertActivatorColors: false,
+    horizontalPosition: "right",
+    verticalPosition: "lowest",
+    showFeaturedProducts: false,
+    inheritThemeTypography: true,
+    fontSize: 14,
+    borderRadius: 20,
+  };
+
+  function isOverridden(key, value) {
+    if (value === null || value === undefined || value === "") return false;
+    if (Object.prototype.hasOwnProperty.call(BLOCK_SETTING_DEFAULTS, key)) {
+      return value !== BLOCK_SETTING_DEFAULTS[key];
+    }
+    return true;
+  }
+
+  // Merges theme-editor block settings on top of the admin-configured
+  // WidgetSettings fetched from settingsEndpoint — block values only apply
+  // when the merchant actually changed them away from the block schema's
+  // own default (see isOverridden above), so an untouched block doesn't
+  // silently mask the admin config.
+  function mergeSettings(fetched, block) {
+    var merged = {};
+    for (var key in fetched) {
+      if (Object.prototype.hasOwnProperty.call(fetched, key)) {
+        merged[key] = fetched[key];
+      }
+    }
+
+    if (isOverridden("primaryColor", block.primaryColor)) {
+      merged.primaryColor = block.primaryColor;
+    }
+    if (isOverridden("iconUrl", block.iconUrl)) {
+      merged.iconUrl = block.iconUrl;
+    }
+    if (isOverridden("headerTitle", block.headerTitle)) {
+      merged.headerTitle = block.headerTitle;
+    }
+    if (isOverridden("greetingMessage", block.greetingMessage)) {
+      merged.welcomeMessage = block.greetingMessage;
+    }
+    if (isOverridden("borderRadius", block.borderRadius)) {
+      merged.borderRadiusPx = block.borderRadius;
+    }
+
+    merged.invertActivatorColors = isOverridden(
+      "invertActivatorColors",
+      block.invertActivatorColors,
+    )
+      ? block.invertActivatorColors
+      : false;
+    merged.horizontalPosition = isOverridden(
+      "horizontalPosition",
+      block.horizontalPosition,
+    )
+      ? block.horizontalPosition
+      : merged.position === "bottom-left"
+        ? "left"
+        : "right";
+    merged.verticalPosition = isOverridden(
+      "verticalPosition",
+      block.verticalPosition,
+    )
+      ? block.verticalPosition
+      : "lowest";
+    merged.activatorLabel = block.activatorLabel || "";
+    merged.inheritThemeTypography = isOverridden(
+      "inheritThemeTypography",
+      block.inheritThemeTypography,
+    )
+      ? block.inheritThemeTypography
+      : true;
+    merged.fontSize = isOverridden("fontSize", block.fontSize)
+      ? block.fontSize
+      : null;
+    merged.showFeaturedProducts = isOverridden(
+      "showFeaturedProducts",
+      block.showFeaturedProducts,
+    )
+      ? block.showFeaturedProducts
+      : false;
+    merged.featuredProductsCollectionHandle =
+      block.featuredProductsCollectionHandle || null;
+
+    return merged;
+  }
   var history = [];
   var lastAgentMessageAt = new Date(0).toISOString();
   var agentPollTimer = null;
@@ -142,22 +248,46 @@
   function init(settings) {
     if (!settings || settings.enabled === false) return;
 
-    root.classList.add(
-      "aicw-position-" + (settings.position || "bottom-right"),
-    );
-    root.style.setProperty("--aicw-color", settings.primaryColor || "#1a1a1a");
-    root.style.setProperty(
-      "--aicw-color-contrast",
-      contrastColor(settings.primaryColor),
-    );
+    var horizontalPosition = settings.horizontalPosition || "right";
+    var verticalPosition = settings.verticalPosition || "lowest";
+    root.classList.add("aicw-h-" + horizontalPosition);
+    root.classList.add("aicw-v-" + verticalPosition);
+
+    var primaryColor = settings.primaryColor || "#1a1a1a";
+    var contrast = contrastColor(primaryColor);
+    if (settings.invertActivatorColors) {
+      root.style.setProperty("--aicw-activator-color", contrast);
+      root.style.setProperty("--aicw-activator-color-contrast", primaryColor);
+    } else {
+      root.style.setProperty("--aicw-activator-color", primaryColor);
+      root.style.setProperty("--aicw-activator-color-contrast", contrast);
+    }
+    root.style.setProperty("--aicw-color", primaryColor);
+    root.style.setProperty("--aicw-color-contrast", contrast);
     root.style.setProperty(
       "--aicw-radius",
-      settings.cornerStyle === "square" ? "8px" : "20px",
+      settings.borderRadiusPx != null
+        ? settings.borderRadiusPx + "px"
+        : settings.cornerStyle === "square"
+          ? "8px"
+          : "20px",
     );
+    if (!settings.inheritThemeTypography && settings.fontSize) {
+      root.style.setProperty("--aicw-font-size", settings.fontSize + "px");
+    }
+
+    var activatorLabelHtml = settings.activatorLabel
+      ? '<span class="aicw-bubble-label">' +
+        escapeHtml(settings.activatorLabel) +
+        "</span>"
+      : "";
 
     root.innerHTML =
-      '<button type="button" class="aicw-bubble" aria-label="Open chat">' +
+      '<button type="button" class="aicw-bubble' +
+      (settings.activatorLabel ? " aicw-bubble-labeled" : "") +
+      '" aria-label="Open chat">' +
       bubbleIcon(settings) +
+      activatorLabelHtml +
       "</button>" +
       '<div class="aicw-panel' +
       (contact ? "" : " aicw-show-gate") +
@@ -180,6 +310,9 @@
       "</button>" +
       "</div>" +
       "</div>" +
+      (settings.showFeaturedProducts
+        ? '<div class="aicw-featured-products" hidden></div>'
+        : "") +
       '<form class="aicw-gate">' +
       '<p class="aicw-gate-intro">Tell us a bit about you to start chatting.</p>' +
       '<label class="aicw-field"><span>Name</span>' +
@@ -244,6 +377,7 @@
     }
 
     updateEmptyState();
+    fetchFeaturedProducts();
 
     // A page reload keeps the same conversationId (sessionStorage) and the
     // backend already has every message, but the rendered chat + in-memory
@@ -501,6 +635,91 @@
       }
     }
 
+    // Matches the sentinel appended by product-card-stream.server.ts after
+    // the stream's natural text ends. Only valid to call once the stream is
+    // fully drained (see the "chunk.done" branch in the submit handler
+    // below) — a partial chunk mid-stream can't be reliably JSON.parse'd.
+    var PRODUCTS_SENTINEL_REGEX = /\n\n<!--AICW_PRODUCTS:(\[.*?\])-->$/;
+
+    function extractProductCards(text) {
+      var match = text.match(PRODUCTS_SENTINEL_REGEX);
+      if (!match) return { text: text, products: [] };
+      try {
+        return { text: text.slice(0, match.index), products: JSON.parse(match[1]) };
+      } catch (err) {
+        return { text: text, products: [] };
+      }
+    }
+
+    function formatPrice(price) {
+      if (!price || !price.amount) return null;
+      var amount = Number(price.amount);
+      if (isNaN(amount)) return null;
+      try {
+        return new Intl.NumberFormat(undefined, {
+          style: "currency",
+          currency: price.currencyCode || "USD",
+        }).format(amount);
+      } catch (err) {
+        return price.amount + " " + (price.currencyCode || "");
+      }
+    }
+
+    function renderProductCards(container, products) {
+      var row = document.createElement("div");
+      row.className = "aicw-product-row";
+      products.forEach(function (product) {
+        var card = document.createElement("a");
+        card.className = "aicw-product-card";
+        card.href = product.url || "#";
+        card.target = "_blank";
+        card.rel = "noreferrer";
+
+        if (product.image) {
+          var img = document.createElement("img");
+          img.className = "aicw-product-image";
+          img.src = product.image;
+          img.alt = product.title || "";
+          card.appendChild(img);
+        } else {
+          var placeholder = document.createElement("div");
+          placeholder.className = "aicw-product-image-placeholder";
+          card.appendChild(placeholder);
+        }
+
+        var info = document.createElement("div");
+        info.className = "aicw-product-info";
+
+        var title = document.createElement("span");
+        title.className = "aicw-product-title";
+        title.textContent = product.title || "";
+        info.appendChild(title);
+
+        var meta = document.createElement("span");
+        meta.className = "aicw-product-meta";
+
+        var priceLabel = formatPrice(product.price);
+        if (priceLabel) {
+          var price = document.createElement("span");
+          price.className = "aicw-product-price";
+          price.textContent = priceLabel;
+          meta.appendChild(price);
+        }
+
+        var stock = document.createElement("span");
+        stock.className = product.inStock
+          ? "aicw-product-in-stock"
+          : "aicw-product-out-of-stock";
+        stock.textContent = product.inStock ? "In stock" : "Out of stock";
+        meta.appendChild(stock);
+
+        info.appendChild(meta);
+        card.appendChild(info);
+        row.appendChild(card);
+      });
+      container.appendChild(row);
+    }
+
     function renderMessageContent(el, text) {
       el.innerHTML = "";
       var media = extractMedia(text);
@@ -534,6 +753,39 @@
         image.alt = "";
         el.appendChild(image);
       }
+    }
+
+    function fetchFeaturedProducts() {
+      if (!settings.showFeaturedProducts || !settings.featuredProductsCollectionHandle) {
+        return;
+      }
+      fetch(
+        "/collections/" +
+          encodeURIComponent(settings.featuredProductsCollectionHandle) +
+          "/products.json?limit=6",
+      )
+        .then(function (res) {
+          return res.ok ? res.json() : null;
+        })
+        .then(function (data) {
+          var products = (data && data.products) || [];
+          if (products.length === 0) return;
+          var mapped = products.map(function (p) {
+            var variant = (p.variants && p.variants[0]) || {};
+            return {
+              title: p.title,
+              url: "/products/" + p.handle,
+              image: p.images && p.images[0] ? p.images[0].src : null,
+              price: variant.price ? { amount: variant.price, currencyCode: "" } : null,
+              inStock: variant.available !== false,
+            };
+          });
+          var strip = root.querySelector(".aicw-featured-products");
+          if (!strip) return;
+          strip.hidden = false;
+          renderProductCards(strip, mapped);
+        })
+        .catch(function () {});
     }
 
     function appendMessage(role, text) {
@@ -614,7 +866,14 @@
           if (isFollowing) scrollToBottom(false);
         }
 
-        history.push({ role: "assistant", content: full });
+        var extracted = extractProductCards(full);
+        renderMessageContent(assistantEl, extracted.text);
+        if (extracted.products.length > 0) {
+          renderProductCards(assistantEl, extracted.products);
+        }
+        if (isFollowing) scrollToBottom(false);
+
+        history.push({ role: "assistant", content: extracted.text });
       } catch (err) {
         assistantEl.textContent =
           "Sorry, something went wrong. Please try again.";
@@ -660,7 +919,7 @@
           "[AI Chat Widget] The widget is turned off in the app settings.",
         );
       }
-      init(settings);
+      init(settings ? mergeSettings(settings, blockSettings) : settings);
     })
     .catch(function (err) {
       console.warn("[AI Chat Widget] Could not load settings.", err);

@@ -12,6 +12,10 @@ import prisma from "../db.server";
 import type { VideoFile } from "./app.knowledge_.videos";
 import type { ImageFile } from "./app.knowledge_.images";
 import type { ProductOption } from "./app.knowledge_.products";
+import {
+  UnansweredQuestionsPanel,
+} from "../components/knowledge/unanswered-questions-panel";
+import { QueryLogPanel } from "../components/knowledge/query-log-panel";
 
 type EntryType = "freeform" | "product";
 type MediaType = "" | "video" | "image";
@@ -29,17 +33,33 @@ const EMPTY_FORM = {
   mediaId: "",
   mediaUrl: "",
   mediaName: "",
+  fromQueryLog: false,
 };
+
+const RECENT_QUERY_LIMIT = 50;
+const UNANSWERED_QUESTION_LIMIT = 20;
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
 
-  const entries = await prisma.knowledgeEntry.findMany({
-    where: { shop: session.shop },
-    orderBy: { createdAt: "desc" },
-  });
+  const [entries, recentQueries, unansweredQueries] = await Promise.all([
+    prisma.knowledgeEntry.findMany({
+      where: { shop: session.shop },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.knowledgeQuery.findMany({
+      where: { shop: session.shop },
+      orderBy: { createdAt: "desc" },
+      take: RECENT_QUERY_LIMIT,
+    }),
+    prisma.knowledgeQuery.findMany({
+      where: { shop: session.shop, matched: false },
+      orderBy: { createdAt: "desc" },
+      take: UNANSWERED_QUESTION_LIMIT,
+    }),
+  ]);
 
-  return { entries };
+  return { entries, recentQueries, unansweredQueries };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -114,8 +134,18 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return { entry };
   }
 
+  const source = payload.fromQueryLog ? "query-log" : "manual";
+  const dbSession = await prisma.session.findUnique({
+    where: { id: session.id },
+    select: { email: true },
+  });
   const entry = await prisma.knowledgeEntry.create({
-    data: { shop: session.shop, ...data },
+    data: {
+      shop: session.shop,
+      ...data,
+      source,
+      createdByEmail: dbSession?.email ?? null,
+    },
   });
   return { entry };
 };
@@ -127,7 +157,8 @@ function mediaBadgeLabel(mediaType: string | null) {
 }
 
 export default function Knowledge() {
-  const { entries } = useLoaderData<typeof loader>();
+  const { entries, recentQueries, unansweredQueries } =
+    useLoaderData<typeof loader>();
   const fetcher = useFetcher<typeof action>();
   const videoFetcher = useFetcher<{ videos: VideoFile[] }>();
   const imageFetcher = useFetcher<{ images: ImageFile[] }>();
@@ -137,7 +168,9 @@ export default function Knowledge() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [pickerMode, setPickerMode] = useState<PickerMode>(null);
   const [productQuery, setProductQuery] = useState("");
-  const modalRef = useRef<{ hideOverlay: () => void }>(null);
+  const modalRef = useRef<{ hideOverlay: () => void; showOverlay: () => void }>(
+    null,
+  );
 
   const isSaving = fetcher.state !== "idle";
   const videos = videoFetcher.data?.videos ?? [];
@@ -179,8 +212,15 @@ export default function Knowledge() {
       mediaId: entry.mediaId ?? "",
       mediaUrl: entry.mediaUrl ?? "",
       mediaName: entry.mediaName ?? "",
+      fromQueryLog: false,
     });
     setPickerMode(null);
+  };
+
+  const convertQuestionToFaq = (question: string) => {
+    setForm({ ...EMPTY_FORM, question, fromQueryLog: true });
+    setPickerMode(null);
+    modalRef.current?.showOverlay();
   };
 
   const handleSave = () => {
@@ -297,6 +337,14 @@ export default function Knowledge() {
         </s-stack>
       </s-section>
 
+      <UnansweredQuestionsPanel
+        questions={unansweredQueries}
+        isConverting={isSaving}
+        onConvert={convertQuestionToFaq}
+      />
+
+      <QueryLogPanel queries={recentQueries} />
+
       {entries.length === 0 ? (
         <s-section>
           <s-grid gap="base" justifyItems="center">
@@ -317,12 +365,14 @@ export default function Knowledge() {
       ) : null}
 
       {entries.length > 0 ? (
-        <s-section padding="none">
+        <s-section heading="Store FAQs" padding="none">
           <s-table variant="auto">
             <s-table-header-row>
               <s-table-header listSlot="primary">Question</s-table-header>
               <s-table-header listSlot="secondary">Answer</s-table-header>
               <s-table-header listSlot="inline">Media</s-table-header>
+              <s-table-header listSlot="inline">Source</s-table-header>
+              <s-table-header listSlot="inline">Created by</s-table-header>
               <s-table-header listSlot="labeled" />
             </s-table-header-row>
             <s-table-body>
@@ -354,6 +404,16 @@ export default function Knowledge() {
                       ) : (
                         <s-text color="subdued">None</s-text>
                       )}
+                    </s-table-cell>
+                    <s-table-cell>
+                      <s-badge tone={entry.source === "query-log" ? "info" : "auto"}>
+                        {entry.source === "query-log" ? "Query log" : "Manual"}
+                      </s-badge>
+                    </s-table-cell>
+                    <s-table-cell>
+                      <s-text color="subdued">
+                        {entry.createdByEmail ?? "—"}
+                      </s-text>
                     </s-table-cell>
                     <s-table-cell>
                       <s-button
