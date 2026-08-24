@@ -276,6 +276,20 @@ export default function SettingsPage() {
       </s-button>
 
       <form data-save-bar onSubmit={handleSubmit} onReset={handleReset}>
+        {/* Collections and the icon are updated via the resource picker /
+            file upload — not a native input the browser fires change events
+            on — so without a hidden input reflecting their current value,
+            data-save-bar's dirty-state detection (which diffs the form's
+            FormData against its initial snapshot) never notices a
+            collections-only or icon-only change, and the Save button never
+            appears. These exist purely so that snapshot includes them. */}
+        <input type="hidden" name="iconUrl" value={form.iconUrl ?? ""} readOnly />
+        <input
+          type="hidden"
+          name="knowledgeCollections"
+          value={JSON.stringify(form.knowledgeCollections ?? [])}
+          readOnly
+        />
         {/* <s-page> only auto-spaces <s-section> elements that are its own
             direct children. Wrapping them in this <form> (required so
             data-save-bar can track every field in one form) breaks that
