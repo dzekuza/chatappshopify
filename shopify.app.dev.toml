@@ -43,6 +43,14 @@ api_version = "2026-07"
   uri = "/webhooks/shop/redact"
   compliance_topics = [ "shop/redact" ]
 
+# Workaround for a live Shopify CLI/Partners regression (deploy suddenly
+# requires this section even for apps that don't use the Events API):
+# https://github.com/Shopify/cli/issues/5707 — remove once that's fixed.
+# This app doesn't subscribe to any cloud-service events.
+[events]
+api_version = "unstable"
+subscription = []
+
 [access_scopes]
 scopes = "read_files,write_files,read_orders,read_products"
 optional_scopes = [ ]
