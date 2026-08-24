@@ -12,7 +12,6 @@ import { WidgetSection } from "../components/settings/widget-section";
 import { AppearanceSection } from "../components/settings/appearance-section";
 import { AiModelSection } from "../components/settings/ai-model-section";
 import type { KnowledgeCollection } from "../components/settings/knowledge-sync-section";
-import { ChatPreview } from "../components/settings/chat-preview";
 import type { WidgetSettings } from "@prisma/client";
 
 const LANGUAGE_VALUES = [
@@ -60,9 +59,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const isProPlan = appSubscriptions.some((sub) => sub.name === PRO_PLAN);
 
   const addToThemeUrl = `https://${session.shop}/admin/themes/current/editor?context=apps&activateAppId=${process.env.SHOPIFY_API_KEY}/${THEME_BLOCK_HANDLE}`;
-  const shopName = session.shop.replace(/\.myshopify\.com$/, "");
 
-  return { settings, addToThemeUrl, shopName, isProPlan };
+  return { settings, addToThemeUrl, isProPlan };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -147,21 +145,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function SettingsPage() {
-  const { settings, addToThemeUrl, shopName, isProPlan } =
-    useLoaderData<typeof loader>();
+  const { settings, addToThemeUrl, isProPlan } = useLoaderData<typeof loader>();
   const fetcher = useFetcher<typeof action>();
 
   const [form, setForm] = useState(settings);
   const [isUploadingIcon, setIsUploadingIcon] = useState(false);
   const [iconUploadError, setIconUploadError] = useState<string | null>(null);
-
-  // Read-only here — collections are edited on the Knowledge page now, this
-  // is only for scoping the live preview's product search to match.
-  const knowledgeCollections: KnowledgeCollection[] = Array.isArray(
-    form.knowledgeCollections,
-  )
-    ? (form.knowledgeCollections as unknown as KnowledgeCollection[])
-    : [];
 
   const update = <K extends keyof WidgetSettings>(
     key: K,
@@ -256,21 +245,6 @@ export default function SettingsPage() {
             onUploadIcon={uploadIcon}
             onRemoveIcon={removeIcon}
             onChange={update}
-            preview={
-              <ChatPreview
-                welcomeMessage={form.welcomeMessage}
-                primaryColor={form.primaryColor}
-                iconUrl={form.iconUrl}
-                position={form.position}
-                headerTitle={form.headerTitle}
-                cornerStyle={form.cornerStyle}
-                shopName={shopName}
-                systemPrompt={form.systemPrompt}
-                geminiModel={form.geminiModel}
-                language={form.language}
-                knowledgeCollections={knowledgeCollections}
-              />
-            }
           />
 
           <AiModelSection

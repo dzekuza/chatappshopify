@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import type { UpdateSettingFn } from "./widget-section";
 
 const POSITIONS = [
@@ -22,7 +21,6 @@ export type AppearanceSectionProps = {
   onUploadIcon: (file: File) => void;
   onRemoveIcon: () => void;
   onChange: UpdateSettingFn;
-  preview?: ReactNode;
 };
 
 export function AppearanceSection({
@@ -36,7 +34,6 @@ export function AppearanceSection({
   onUploadIcon,
   onRemoveIcon,
   onChange,
-  preview,
 }: AppearanceSectionProps) {
   return (
     <s-section heading="Appearance">
@@ -136,12 +133,6 @@ export function AppearanceSection({
             </s-option>
           ))}
         </s-select>
-        {preview ? (
-          <>
-            <s-divider direction="inline" />
-            {preview}
-          </>
-        ) : null}
       </s-stack>
     </s-section>
   );
