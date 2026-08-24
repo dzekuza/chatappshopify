@@ -114,7 +114,7 @@
   right: 0;
   width: 360px;
   max-width: calc(100vw - 32px);
-  height: 500px;
+  height: 560px;
   max-height: calc(100vh - 120px);
   background: #fff;
   border-radius: var(--aicw-radius, 20px);
@@ -574,9 +574,10 @@
 
 .aicw-featured-products {
   display: flex;
+  flex-wrap: nowrap;
   gap: 8px;
   overflow-x: auto;
-  padding: 10px 16px;
+  padding: 8px 16px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 
@@ -584,6 +585,64 @@
   display: none;
 }
 
+/* Smaller than the in-chat product cards (.aicw-product-card elsewhere) —
+   this strip sits inside a fixed-height panel above the message list, so it
+   needs to stay compact rather than eating into the chat's visible area. */
 .aicw-featured-products .aicw-product-card {
-  width: 100px;
+  width: 76px;
+  flex: 0 0 76px;
+}
+
+.aicw-featured-products .aicw-product-image,
+.aicw-featured-products .aicw-product-image-placeholder {
+  height: 56px;
+}
+
+.aicw-featured-products .aicw-product-info {
+  padding: 4px 6px;
+}
+
+.aicw-featured-products .aicw-product-title {
+  font-size: 10px;
+}
+
+.aicw-featured-products .aicw-product-meta {
+  font-size: 9px;
+}
+
+.aicw-typing {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+}
+
+.aicw-typing-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.4;
+  animation: aicw-typing-bounce 1.2s infinite ease-in-out;
+}
+
+.aicw-typing-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.aicw-typing-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes aicw-typing-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
 }

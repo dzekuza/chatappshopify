@@ -766,6 +766,19 @@
         .catch(function () {});
     }
 
+    function renderTypingIndicator(el) {
+      el.innerHTML = "";
+      var wrap = document.createElement("span");
+      wrap.className = "aicw-typing";
+      wrap.setAttribute("aria-label", "Assistant is typing");
+      for (var i = 0; i < 3; i++) {
+        var dot = document.createElement("span");
+        dot.className = "aicw-typing-dot";
+        wrap.appendChild(dot);
+      }
+      el.appendChild(wrap);
+    }
+
     function appendMessage(role, text) {
       var el = document.createElement("div");
       el.className = "aicw-message aicw-message-" + role;
@@ -803,6 +816,7 @@
       history.push({ role: "user", content: text });
 
       var assistantEl = appendMessage("assistant", "");
+      renderTypingIndicator(assistantEl);
 
       try {
         var response = await fetch(chatEndpoint, {
@@ -840,8 +854,12 @@
           var chunk = await reader.read();
           if (chunk.done) break;
           full += decoder.decode(chunk.value, { stream: true });
-          renderMessageContent(assistantEl, full);
-          if (isFollowing) scrollToBottom(false);
+          // Guard against wiping the typing indicator on a chunk that
+          // decodes to nothing yet (e.g. a split multi-byte character).
+          if (full) {
+            renderMessageContent(assistantEl, full);
+            if (isFollowing) scrollToBottom(false);
+          }
         }
 
         var extracted = extractProductCards(full);

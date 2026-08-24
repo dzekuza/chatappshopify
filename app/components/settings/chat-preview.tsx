@@ -107,6 +107,16 @@ function CloseIcon() {
   );
 }
 
+function TypingIndicator() {
+  return (
+    <span className={styles.previewTyping} aria-label="Assistant is typing">
+      <span className={styles.previewTypingDot} />
+      <span className={styles.previewTypingDot} />
+      <span className={styles.previewTypingDot} />
+    </span>
+  );
+}
+
 function greetingForNow() {
   const hour = new Date().getHours();
   if (hour < 12) return "Morning";
@@ -441,7 +451,7 @@ export function ChatPreview({
                       {message.content
                         ? renderMessageBody(message.content)
                         : isPreviewSending && index === previewMessages.length - 1
-                          ? "…"
+                          ? <TypingIndicator />
                           : ""}
                       {message.products && message.products.length > 0 ? (
                         <ProductCardRow products={message.products} />
