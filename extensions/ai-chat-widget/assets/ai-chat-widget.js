@@ -25,12 +25,8 @@
   // the theme-editor defaults even when the merchant never opened the
   // customizer for this block.
   var BLOCK_SETTING_DEFAULTS = {
-    invertActivatorColors: false,
     horizontalPosition: "right",
     verticalPosition: "lowest",
-    showFeaturedProducts: false,
-    inheritThemeTypography: true,
-    fontSize: 14,
     borderRadius: 20,
   };
 
@@ -71,12 +67,6 @@
       merged.borderRadiusPx = block.borderRadius;
     }
 
-    merged.invertActivatorColors = isOverridden(
-      "invertActivatorColors",
-      block.invertActivatorColors,
-    )
-      ? block.invertActivatorColors
-      : false;
     merged.horizontalPosition = isOverridden(
       "horizontalPosition",
       block.horizontalPosition,
@@ -91,24 +81,12 @@
     )
       ? block.verticalPosition
       : "lowest";
-    merged.activatorLabel = block.activatorLabel || "";
-    merged.inheritThemeTypography = isOverridden(
-      "inheritThemeTypography",
-      block.inheritThemeTypography,
-    )
-      ? block.inheritThemeTypography
-      : true;
-    merged.fontSize = isOverridden("fontSize", block.fontSize)
-      ? block.fontSize
-      : null;
-    merged.showFeaturedProducts = isOverridden(
-      "showFeaturedProducts",
-      block.showFeaturedProducts,
-    )
-      ? block.showFeaturedProducts
-      : false;
+    // No separate "show featured products" toggle — the schema is capped at
+    // 6 non-interactive settings by the platform, so this is inferred from
+    // whether the merchant picked a collection.
     merged.featuredProductsCollectionHandle =
       block.featuredProductsCollectionHandle || null;
+    merged.showFeaturedProducts = !!merged.featuredProductsCollectionHandle;
 
     return merged;
   }

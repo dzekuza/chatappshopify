@@ -4,6 +4,11 @@
   data-settings-endpoint) — see mergeSettings() in ai-chat-widget.js. Only
   values the merchant actually changed away from the schema default here are
   applied as overrides; everything else falls back to the admin config.
+
+  App embed blocks cap non-interactive settings at 6, so this schema keeps
+  only the highest-value controls (color, position, header title, greeting,
+  border radius) plus the two resource pickers (icon, featured collection),
+  which are a separate "interactive" category.
 {% endcomment %}
 <div
   id="ai-chat-widget-root"
@@ -13,17 +18,12 @@
   data-history-endpoint="{{ shop.url }}/apps/chat-widget/history"
   data-block-settings='{
     "primaryColor": {{ block.settings.primary_color | json }},
-    "invertActivatorColors": {{ block.settings.invert_activator_colors | json }},
     "iconUrl": {% if block.settings.icon %}{{ block.settings.icon | image_url: width: 128 | json }}{% else %}null{% endif %},
-    "activatorLabel": {{ block.settings.activator_label | json }},
     "horizontalPosition": {{ block.settings.horizontal_position | json }},
     "verticalPosition": {{ block.settings.vertical_position | json }},
     "headerTitle": {{ block.settings.header_title | json }},
     "greetingMessage": {{ block.settings.greeting_message | json }},
-    "showFeaturedProducts": {{ block.settings.show_featured_products | json }},
     "featuredProductsCollectionHandle": {% if block.settings.featured_products_collection %}{{ block.settings.featured_products_collection.handle | json }}{% else %}null{% endif %},
-    "inheritThemeTypography": {{ block.settings.inherit_theme_typography | json }},
-    "fontSize": {{ block.settings.font_size | json }},
     "borderRadius": {{ block.settings.border_radius | json }}
   }'
 ></div>
@@ -38,19 +38,7 @@
   "settings": [
     { "type": "header", "content": "Colors" },
     { "type": "color", "id": "primary_color", "label": "Brand color" },
-    {
-      "type": "checkbox",
-      "id": "invert_activator_colors",
-      "label": "Invert activator colors",
-      "default": false
-    },
-    { "type": "header", "content": "Activator" },
     { "type": "image_picker", "id": "icon", "label": "Activator icon" },
-    {
-      "type": "text",
-      "id": "activator_label",
-      "label": "Activator label (optional)"
-    },
     { "type": "header", "content": "Position" },
     {
       "type": "select",
@@ -83,32 +71,9 @@
     },
     { "type": "header", "content": "Featured products" },
     {
-      "type": "checkbox",
-      "id": "show_featured_products",
-      "label": "Show featured products",
-      "default": false
-    },
-    {
       "type": "collection",
       "id": "featured_products_collection",
       "label": "Featured products collection"
-    },
-    { "type": "header", "content": "Typography" },
-    {
-      "type": "checkbox",
-      "id": "inherit_theme_typography",
-      "label": "Inherit typography from theme",
-      "default": true
-    },
-    {
-      "type": "range",
-      "id": "font_size",
-      "label": "Activator font size",
-      "min": 12,
-      "max": 20,
-      "step": 1,
-      "unit": "px",
-      "default": 14
     },
     { "type": "header", "content": "Borders" },
     {
