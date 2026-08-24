@@ -501,11 +501,16 @@
   cursor: default;
 }
 
+/* A full-width sibling message (see .aicw-messages), not a child of a
+   .aicw-message bubble, so it isn't capped by the bubble's 85% max-width. */
+.aicw-product-message {
+  width: 100%;
+}
+
 .aicw-product-row {
   display: flex;
   gap: 8px;
   overflow-x: auto;
-  margin-top: 6px;
   padding-bottom: 2px;
   max-width: 100%;
 }

@@ -865,7 +865,13 @@
         var extracted = extractProductCards(full);
         renderMessageContent(assistantEl, extracted.text);
         if (extracted.products.length > 0) {
-          renderProductCards(assistantEl, extracted.products);
+          // A sibling of the message bubble, not a child of it — so it can
+          // span the full width of .aicw-messages instead of being capped
+          // by the bubble's 85% max-width and padding.
+          var productsEl = document.createElement("div");
+          productsEl.className = "aicw-product-message";
+          renderProductCards(productsEl, extracted.products);
+          messagesEl.appendChild(productsEl);
         }
         if (isFollowing) scrollToBottom(false);
 

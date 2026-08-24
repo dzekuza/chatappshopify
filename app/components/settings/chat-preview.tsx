@@ -439,25 +439,38 @@ export function ChatPreview({
                 </div>
               ) : (
                 <div className={styles.previewMessages}>
-                  {previewMessages.map((message, index) => (
-                    <div
-                      key={index}
-                      className={
-                        message.role === "user"
-                          ? `${styles.previewMessage} ${styles.previewMessageUser}`
-                          : `${styles.previewMessage} ${styles.previewMessageAssistant}`
-                      }
-                    >
-                      {message.content
-                        ? renderMessageBody(message.content)
-                        : isPreviewSending && index === previewMessages.length - 1
-                          ? <TypingIndicator />
-                          : ""}
-                      {message.products && message.products.length > 0 ? (
-                        <ProductCardRow products={message.products} />
-                      ) : null}
-                    </div>
-                  ))}
+                  {previewMessages.flatMap((message, index) => {
+                    const nodes = [
+                      <div
+                        key={`msg-${index}`}
+                        className={
+                          message.role === "user"
+                            ? `${styles.previewMessage} ${styles.previewMessageUser}`
+                            : `${styles.previewMessage} ${styles.previewMessageAssistant}`
+                        }
+                      >
+                        {message.content
+                          ? renderMessageBody(message.content)
+                          : isPreviewSending && index === previewMessages.length - 1
+                            ? <TypingIndicator />
+                            : ""}
+                      </div>,
+                    ];
+                    // A sibling of the message bubble, not a child of it —
+                    // spans the full width of .previewMessages instead of
+                    // being capped by the bubble's 85% max-width.
+                    if (message.products && message.products.length > 0) {
+                      nodes.push(
+                        <div
+                          key={`products-${index}`}
+                          className={styles.previewProductMessage}
+                        >
+                          <ProductCardRow products={message.products} />
+                        </div>,
+                      );
+                    }
+                    return nodes;
+                  })}
                 </div>
               )}
             </div>
