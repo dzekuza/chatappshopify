@@ -9,6 +9,7 @@ import {
   storeContextPrompt,
 } from "../chat-guardrails.server";
 import { textStreamWithProductCards } from "../product-card-stream.server";
+import { resolveGeminiModel } from "../gemini-model.server";
 import prisma from "../db.server";
 
 const MAX_MESSAGES = 20;
@@ -183,7 +184,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   const systemPrompt = String(body?.systemPrompt ?? "").trim();
-  const geminiModel = String(body?.geminiModel ?? "gemini-2.5-flash").trim();
+  const requestedGeminiModel = String(
+    body?.geminiModel ?? "gemini-2.5-flash",
+  ).trim();
+  const geminiModel = resolveGeminiModel(
+    requestedGeminiModel,
+    Boolean(shopSettings?.geminiApiKey),
+  );
   const language = String(body?.language ?? "auto").trim();
   const collectionFilter = collectionIdFilter(body?.knowledgeCollections);
   const knowledgeEntries = await prisma.knowledgeEntry.findMany({

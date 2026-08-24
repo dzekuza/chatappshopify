@@ -16,6 +16,7 @@ import {
 } from "../chat-guardrails.server";
 import { matchKnowledgeEntry } from "../knowledge-query-matcher.server";
 import { textStreamWithProductCards } from "../product-card-stream.server";
+import { resolveGeminiModel } from "../gemini-model.server";
 
 const MAX_MESSAGES = 20;
 
@@ -286,6 +287,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const google = createGoogleGenerativeAI({
     apiKey: settings.geminiApiKey || process.env.GEMINI_API_KEY,
   });
+  const geminiModel = resolveGeminiModel(
+    settings.geminiModel,
+    Boolean(settings.geminiApiKey),
+  );
   const collectionFilter = collectionIdFilter(settings.knowledgeCollections);
   const knowledgeEntries = await prisma.knowledgeEntry.findMany({
     where: { shop: session.shop },
@@ -323,7 +328,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   let lastProductResults: unknown[] | null = null;
 
   const result = streamText({
-    model: google(settings.geminiModel),
+    model: google(geminiModel),
     system: [
       merchantPersonaPrompt(settings.systemPrompt),
       storeContextPrompt(storeAudit?.storeContext),
