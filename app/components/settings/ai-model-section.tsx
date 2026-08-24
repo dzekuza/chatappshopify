@@ -1,8 +1,13 @@
 import type { UpdateSettingFn } from "./widget-section";
 
+// gemini-2.5-pro was removed from this list on 2026-08-24 — Google
+// deprecated it for new API users ("This model models/gemini-2.5-pro is no
+// longer available to new users"), which broke every shop that had it
+// selected with a live 404 on every chat request. gemini-3.1-pro-preview is
+// the model Google's own error message points to as the replacement.
 const GEMINI_MODELS = [
   { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash (fast, low cost)" },
-  { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro (higher quality)" },
+  { value: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro (higher quality)" },
 ];
 
 const LANGUAGES = [
