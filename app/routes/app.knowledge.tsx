@@ -16,6 +16,11 @@ import {
   UnansweredQuestionsPanel,
 } from "../components/knowledge/unanswered-questions-panel";
 import { QueryLogPanel } from "../components/knowledge/query-log-panel";
+import {
+  KnowledgeSyncSection,
+  type KnowledgeCollection,
+} from "../components/settings/knowledge-sync-section";
+import { StoreAuditSection } from "../components/settings/store-audit-section";
 
 type EntryType = "freeform" | "product";
 type MediaType = "" | "video" | "image";
@@ -42,30 +47,71 @@ const UNANSWERED_QUESTION_LIMIT = 20;
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
 
-  const [entries, recentQueries, unansweredQueries] = await Promise.all([
-    prisma.knowledgeEntry.findMany({
-      where: { shop: session.shop },
-      orderBy: { createdAt: "desc" },
-    }),
-    prisma.knowledgeQuery.findMany({
-      where: { shop: session.shop },
-      orderBy: { createdAt: "desc" },
-      take: RECENT_QUERY_LIMIT,
-    }),
-    prisma.knowledgeQuery.findMany({
-      where: { shop: session.shop, matched: false },
-      orderBy: { createdAt: "desc" },
-      take: UNANSWERED_QUESTION_LIMIT,
-    }),
-  ]);
+  const [entries, recentQueries, unansweredQueries, widgetSettings, storeAudit] =
+    await Promise.all([
+      prisma.knowledgeEntry.findMany({
+        where: { shop: session.shop },
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.knowledgeQuery.findMany({
+        where: { shop: session.shop },
+        orderBy: { createdAt: "desc" },
+        take: RECENT_QUERY_LIMIT,
+      }),
+      prisma.knowledgeQuery.findMany({
+        where: { shop: session.shop, matched: false },
+        orderBy: { createdAt: "desc" },
+        take: UNANSWERED_QUESTION_LIMIT,
+      }),
+      prisma.widgetSettings.upsert({
+        where: { shop: session.shop },
+        update: {},
+        create: { shop: session.shop },
+        select: { knowledgeCollections: true },
+      }),
+      prisma.storeAudit.findUnique({
+        where: { shop: session.shop },
+        select: { status: true, lastRunAt: true, lastError: true, storeContext: true },
+      }),
+    ]);
 
-  return { entries, recentQueries, unansweredQueries };
+  const knowledgeCollections = Array.isArray(widgetSettings.knowledgeCollections)
+    ? (widgetSettings.knowledgeCollections as unknown as KnowledgeCollection[])
+    : [];
+
+  return { entries, recentQueries, unansweredQueries, knowledgeCollections, storeAudit };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const payload = await request.json();
   const intent = String(payload.intent ?? "save");
+
+  if (intent === "sync-collections") {
+    const knowledgeCollections: KnowledgeCollection[] = Array.isArray(
+      payload.knowledgeCollections,
+    )
+      ? payload.knowledgeCollections
+          .filter(
+            (c: unknown): c is KnowledgeCollection =>
+              typeof c === "object" &&
+              c !== null &&
+              typeof (c as Record<string, unknown>).id === "string",
+          )
+          .map((c: KnowledgeCollection) => ({
+            id: c.id,
+            title: String(c.title ?? ""),
+            handle: String(c.handle ?? ""),
+          }))
+      : [];
+
+    await prisma.widgetSettings.upsert({
+      where: { shop: session.shop },
+      update: { knowledgeCollections },
+      create: { shop: session.shop, knowledgeCollections },
+    });
+    return { ok: true, knowledgeCollections };
+  }
 
   if (intent === "delete") {
     const id = String(payload.id ?? "");
@@ -157,20 +203,75 @@ function mediaBadgeLabel(mediaType: string | null) {
 }
 
 export default function Knowledge() {
-  const { entries, recentQueries, unansweredQueries } =
+  const { entries, recentQueries, unansweredQueries, knowledgeCollections, storeAudit } =
     useLoaderData<typeof loader>();
   const fetcher = useFetcher<typeof action>();
   const videoFetcher = useFetcher<{ videos: VideoFile[] }>();
   const imageFetcher = useFetcher<{ images: ImageFile[] }>();
   const productFetcher = useFetcher<{ products: ProductOption[] }>();
+  const collectionsFetcher = useFetcher<{
+    ok: boolean;
+    knowledgeCollections: KnowledgeCollection[];
+  }>();
+  const auditFetcher = useFetcher<{
+    audit: {
+      status: string;
+      lastRunAt: string | Date | null;
+      lastError: string | null;
+      storeContext: string | null;
+    } | null;
+  }>();
   const shopify = useAppBridge();
 
   const [form, setForm] = useState(EMPTY_FORM);
   const [pickerMode, setPickerMode] = useState<PickerMode>(null);
   const [productQuery, setProductQuery] = useState("");
+  const [isSyncingCollections, setIsSyncingCollections] = useState(false);
   const modalRef = useRef<{ hideOverlay: () => void; showOverlay: () => void }>(
     null,
   );
+
+  const currentCollections =
+    collectionsFetcher.data?.knowledgeCollections ?? knowledgeCollections;
+  const currentAudit = auditFetcher.data?.audit ?? storeAudit;
+  const isRunningAudit =
+    auditFetcher.state !== "idle" || currentAudit?.status === "running";
+
+  const saveCollections = (next: KnowledgeCollection[]) => {
+    collectionsFetcher.submit(
+      JSON.stringify({ intent: "sync-collections", knowledgeCollections: next }),
+      { method: "POST", encType: "application/json" },
+    );
+  };
+
+  const syncCollections = async () => {
+    setIsSyncingCollections(true);
+    try {
+      const selected = await shopify.resourcePicker({
+        type: "collection",
+        action: "select",
+        multiple: true,
+        selectionIds: currentCollections.map((c) => ({ id: c.id })),
+      });
+      if (!selected) return;
+      const next: KnowledgeCollection[] = selected.map((c) => ({
+        id: c.id,
+        title: c.title,
+        handle: c.handle,
+      }));
+      saveCollections(next);
+    } finally {
+      setIsSyncingCollections(false);
+    }
+  };
+
+  const removeCollection = (id: string) => {
+    saveCollections(currentCollections.filter((c) => c.id !== id));
+  };
+
+  const refreshAudit = () => {
+    auditFetcher.submit(null, { method: "POST", action: "/app/store-audit" });
+  };
 
   const isSaving = fetcher.state !== "idle";
   const videos = videoFetcher.data?.videos ?? [];
@@ -336,6 +437,19 @@ export default function Knowledge() {
 
         </s-stack>
       </s-section>
+
+      <KnowledgeSyncSection
+        knowledgeCollections={currentCollections}
+        isSyncingCollections={isSyncingCollections}
+        onSync={syncCollections}
+        onRemove={removeCollection}
+      />
+
+      <StoreAuditSection
+        audit={currentAudit}
+        isRunning={isRunningAudit}
+        onRefresh={refreshAudit}
+      />
 
       <UnansweredQuestionsPanel
         questions={unansweredQueries}

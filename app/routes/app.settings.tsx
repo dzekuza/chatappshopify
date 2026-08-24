@@ -5,19 +5,14 @@ import type {
   LoaderFunctionArgs,
 } from "react-router";
 import { useFetcher, useLoaderData } from "react-router";
-import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate, MONTHLY_PLAN, PRO_PLAN } from "../shopify.server";
 import prisma from "../db.server";
 import { WidgetSection } from "../components/settings/widget-section";
 import { AppearanceSection } from "../components/settings/appearance-section";
 import { AiModelSection } from "../components/settings/ai-model-section";
-import {
-  KnowledgeSyncSection,
-  type KnowledgeCollection,
-} from "../components/settings/knowledge-sync-section";
+import type { KnowledgeCollection } from "../components/settings/knowledge-sync-section";
 import { ChatPreview } from "../components/settings/chat-preview";
-import { StoreAuditSection } from "../components/settings/store-audit-section";
 import type { WidgetSettings } from "@prisma/client";
 
 const LANGUAGE_VALUES = [
@@ -51,26 +46,23 @@ const THEME_BLOCK_HANDLE = "chat_widget";
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session, billing } = await authenticate.admin(request);
 
-  const settings = await prisma.widgetSettings.upsert({
-    where: { shop: session.shop },
-    update: {},
-    create: { shop: session.shop },
-  });
-
-  const { appSubscriptions } = await billing.check({
-    plans: [MONTHLY_PLAN, PRO_PLAN],
-  });
+  // The DB upsert and the Shopify billing check don't depend on each
+  // other's result — running them concurrently instead of sequentially
+  // roughly halves this loader's critical path.
+  const [settings, { appSubscriptions }] = await Promise.all([
+    prisma.widgetSettings.upsert({
+      where: { shop: session.shop },
+      update: {},
+      create: { shop: session.shop },
+    }),
+    billing.check({ plans: [MONTHLY_PLAN, PRO_PLAN] }),
+  ]);
   const isProPlan = appSubscriptions.some((sub) => sub.name === PRO_PLAN);
 
   const addToThemeUrl = `https://${session.shop}/admin/themes/current/editor?context=apps&activateAppId=${process.env.SHOPIFY_API_KEY}/${THEME_BLOCK_HANDLE}`;
   const shopName = session.shop.replace(/\.myshopify\.com$/, "");
 
-  const storeAudit = await prisma.storeAudit.findUnique({
-    where: { shop: session.shop },
-    select: { status: true, lastRunAt: true, lastError: true, storeContext: true },
-  });
-
-  return { settings, addToThemeUrl, shopName, isProPlan, storeAudit };
+  return { settings, addToThemeUrl, shopName, isProPlan };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -155,32 +147,16 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function SettingsPage() {
-  const { settings, addToThemeUrl, shopName, isProPlan, storeAudit } =
+  const { settings, addToThemeUrl, shopName, isProPlan } =
     useLoaderData<typeof loader>();
   const fetcher = useFetcher<typeof action>();
-  const auditFetcher = useFetcher<{
-    audit: {
-      status: string;
-      lastRunAt: string | Date | null;
-      lastError: string | null;
-      storeContext: string | null;
-    } | null;
-  }>();
-  const shopify = useAppBridge();
-
-  const currentAudit = auditFetcher.data?.audit ?? storeAudit;
-  const isRunningAudit =
-    auditFetcher.state !== "idle" || currentAudit?.status === "running";
-
-  const refreshAudit = () => {
-    auditFetcher.submit(null, { method: "POST", action: "/app/store-audit" });
-  };
 
   const [form, setForm] = useState(settings);
-  const [isSyncingCollections, setIsSyncingCollections] = useState(false);
   const [isUploadingIcon, setIsUploadingIcon] = useState(false);
   const [iconUploadError, setIconUploadError] = useState<string | null>(null);
 
+  // Read-only here — collections are edited on the Knowledge page now, this
+  // is only for scoping the live preview's product search to match.
   const knowledgeCollections: KnowledgeCollection[] = Array.isArray(
     form.knowledgeCollections,
   )
@@ -192,34 +168,6 @@ export default function SettingsPage() {
     value: WidgetSettings[K],
   ) => {
     setForm((prev) => ({ ...prev, [key]: value }));
-  };
-
-  const syncCollections = async () => {
-    setIsSyncingCollections(true);
-    try {
-      const selected = await shopify.resourcePicker({
-        type: "collection",
-        action: "select",
-        multiple: true,
-        selectionIds: knowledgeCollections.map((c) => ({ id: c.id })),
-      });
-      if (!selected) return;
-      const next: KnowledgeCollection[] = selected.map((c) => ({
-        id: c.id,
-        title: c.title,
-        handle: c.handle,
-      }));
-      update("knowledgeCollections", next as unknown as WidgetSettings["knowledgeCollections"]);
-    } finally {
-      setIsSyncingCollections(false);
-    }
-  };
-
-  const removeCollection = (id: string) => {
-    update(
-      "knowledgeCollections",
-      knowledgeCollections.filter((c) => c.id !== id) as unknown as WidgetSettings["knowledgeCollections"],
-    );
   };
 
   const uploadIcon = async (file: File) => {
@@ -276,20 +224,14 @@ export default function SettingsPage() {
       </s-button>
 
       <form data-save-bar onSubmit={handleSubmit} onReset={handleReset}>
-        {/* Collections and the icon are updated via the resource picker /
-            file upload — not a native input the browser fires change events
-            on — so without a hidden input reflecting their current value,
-            data-save-bar's dirty-state detection (which diffs the form's
-            FormData against its initial snapshot) never notices a
-            collections-only or icon-only change, and the Save button never
-            appears. These exist purely so that snapshot includes them. */}
+        {/* The icon is updated via file upload — not a native input the
+            browser fires change events on — so without a hidden input
+            reflecting its current value, data-save-bar's dirty-state
+            detection (which diffs the form's FormData against its initial
+            snapshot) never notices an icon-only change, and the Save
+            button never appears. This exists purely so that snapshot
+            includes it. */}
         <input type="hidden" name="iconUrl" value={form.iconUrl ?? ""} readOnly />
-        <input
-          type="hidden"
-          name="knowledgeCollections"
-          value={JSON.stringify(form.knowledgeCollections ?? [])}
-          readOnly
-        />
         {/* <s-page> only auto-spaces <s-section> elements that are its own
             direct children. Wrapping them in this <form> (required so
             data-save-bar can track every field in one form) breaks that
@@ -339,20 +281,8 @@ export default function SettingsPage() {
             onChange={update}
           />
 
-          <KnowledgeSyncSection
-            knowledgeCollections={knowledgeCollections}
-            isSyncingCollections={isSyncingCollections}
-            onSync={syncCollections}
-            onRemove={removeCollection}
-          />
         </s-stack>
       </form>
-
-      <StoreAuditSection
-        audit={currentAudit}
-        isRunning={isRunningAudit}
-        onRefresh={refreshAudit}
-      />
 
       {/* Must be a direct child of <s-page> (not nested inside the <form>
           above) — slot assignment for web components only picks up
