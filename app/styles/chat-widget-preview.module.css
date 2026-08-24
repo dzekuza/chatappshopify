@@ -7,6 +7,20 @@
   z-index: 400;
   bottom: 20px;
   right: 20px;
+  --preview-font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, sans-serif;
+  font-family: var(--preview-font-family);
+}
+
+/* Rendered outside <s-page>'s tree now (a layout-level sibling of <Outlet />,
+   see app/routes/app.tsx), so it no longer inherits Polaris's Inter
+   font-family the way it did when nested inside a Polaris section — set it
+   explicitly instead. Buttons/inputs/textareas don't inherit font-family
+   from an ancestor by default in the browser's own UA stylesheet, so this
+   has to be forced on every element, same as the storefront widget does. */
+.previewStage,
+.previewStage * {
+  font-family: var(--preview-font-family);
 }
 
 .previewStageLeft {
