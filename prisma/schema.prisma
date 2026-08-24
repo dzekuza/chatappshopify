@@ -53,6 +53,8 @@ model WidgetSettings {
   geminiApiKey    String?
   language        String   @default("auto")
   knowledgeCollections Json @default("[]")
+  convertedCustomersCount      Int?
+  convertedCustomersCheckedAt  DateTime?
   updatedAt       DateTime @updatedAt
 
   @@schema("chat_widget")
