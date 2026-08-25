@@ -16,11 +16,17 @@ import {
   UnansweredQuestionsPanel,
 } from "../components/knowledge/unanswered-questions-panel";
 import { QueryLogPanel } from "../components/knowledge/query-log-panel";
+import { VideoTimestampFields } from "../components/knowledge/video-timestamp-fields";
 import {
   KnowledgeSyncSection,
   type KnowledgeCollection,
 } from "../components/settings/knowledge-sync-section";
 import { StoreAuditSection } from "../components/settings/store-audit-section";
+import {
+  describeRange,
+  formatTimestamp,
+  parseTimeInput,
+} from "../media-timestamp";
 
 type EntryType = "freeform" | "product";
 type MediaType = "" | "video" | "image";
@@ -38,6 +44,8 @@ const EMPTY_FORM = {
   mediaId: "",
   mediaUrl: "",
   mediaName: "",
+  mediaStart: "",
+  mediaEnd: "",
   fromQueryLog: false,
 };
 
@@ -127,9 +135,38 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const mediaId = String(payload.mediaId ?? "").trim() || null;
   const mediaUrl = String(payload.mediaUrl ?? "").trim() || null;
   const mediaName = String(payload.mediaName ?? "").trim() || null;
+  const mediaStartInput = String(payload.mediaStart ?? "").trim();
+  const mediaEndInput = String(payload.mediaEnd ?? "").trim();
 
   if (!answer) {
     return { error: "Answer is required." };
+  }
+
+  // Timestamps only mean anything for a video — an image entry never carries
+  // them, even if a stale form value came along for the ride.
+  let mediaStartSeconds: number | null = null;
+  let mediaEndSeconds: number | null = null;
+
+  if (mediaType === "video") {
+    if (mediaStartInput) {
+      mediaStartSeconds = parseTimeInput(mediaStartInput);
+      if (mediaStartSeconds === null) {
+        return { error: "Start time must be seconds (10) or mm:ss (0:10)." };
+      }
+    }
+    if (mediaEndInput) {
+      mediaEndSeconds = parseTimeInput(mediaEndInput);
+      if (mediaEndSeconds === null) {
+        return { error: "End time must be seconds (15) or mm:ss (0:15)." };
+      }
+    }
+    if (
+      mediaStartSeconds !== null &&
+      mediaEndSeconds !== null &&
+      mediaEndSeconds <= mediaStartSeconds
+    ) {
+      return { error: "End time must be after the start time." };
+    }
   }
 
   let question: string | null = null;
@@ -162,6 +199,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     mediaId,
     mediaUrl,
     mediaName,
+    mediaStartSeconds,
+    mediaEndSeconds,
   };
 
   const id = String(payload.id ?? "").trim();
@@ -196,8 +235,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   return { entry };
 };
 
-function mediaBadgeLabel(mediaType: string | null) {
-  if (mediaType === "video") return "Video attached";
+function mediaBadgeLabel(
+  mediaType: string | null,
+  startSeconds: number | null,
+  endSeconds: number | null,
+) {
+  if (mediaType === "video") {
+    const range = describeRange(startSeconds, endSeconds);
+    return range ? `Video ${range}` : "Video attached";
+  }
   if (mediaType === "image") return "Image attached";
   return null;
 }
@@ -313,6 +359,14 @@ export default function Knowledge() {
       mediaId: entry.mediaId ?? "",
       mediaUrl: entry.mediaUrl ?? "",
       mediaName: entry.mediaName ?? "",
+      mediaStart:
+        entry.mediaStartSeconds === null
+          ? ""
+          : formatTimestamp(entry.mediaStartSeconds),
+      mediaEnd:
+        entry.mediaEndSeconds === null
+          ? ""
+          : formatTimestamp(entry.mediaEndSeconds),
       fromQueryLog: false,
     });
     setPickerMode(null);
@@ -376,6 +430,8 @@ export default function Knowledge() {
       mediaId: image.id,
       mediaUrl: image.url,
       mediaName: image.filename,
+      mediaStart: "",
+      mediaEnd: "",
     }));
     setPickerMode(null);
   };
@@ -397,6 +453,8 @@ export default function Knowledge() {
       mediaId: "",
       mediaUrl: "",
       mediaName: "",
+      mediaStart: "",
+      mediaEnd: "",
     }));
   };
 
@@ -492,7 +550,11 @@ export default function Knowledge() {
             <s-table-body>
               {entries.map((entry) => {
                 const editLinkId = `edit-${entry.id}`;
-                const mediaLabel = mediaBadgeLabel(entry.mediaType);
+                const mediaLabel = mediaBadgeLabel(
+                  entry.mediaType,
+                  entry.mediaStartSeconds,
+                  entry.mediaEndSeconds,
+                );
                 return (
                   <s-table-row key={entry.id} clickDelegate={editLinkId}>
                     <s-table-cell>
@@ -738,25 +800,40 @@ export default function Knowledge() {
             />
 
             {form.mediaName ? (
-              <s-stack direction="inline" gap="small-200" alignItems="center">
-                {form.mediaType === "image" && form.mediaUrl ? (
-                  <>
-                    <s-thumbnail
-                      src={form.mediaUrl}
-                      alt={form.mediaName}
-                      size="base"
-                    />
-                    <s-text>{form.mediaName}</s-text>
-                  </>
-                ) : (
-                  <s-badge tone="info">
-                    {form.mediaType === "image" ? "Image: " : "Video: "}
-                    {form.mediaName}
-                  </s-badge>
-                )}
-                <s-button variant="tertiary" onClick={removeMedia}>
-                  Remove
-                </s-button>
+              <s-stack direction="block" gap="base">
+                <s-stack direction="inline" gap="small-200" alignItems="center">
+                  {form.mediaType === "image" && form.mediaUrl ? (
+                    <>
+                      <s-thumbnail
+                        src={form.mediaUrl}
+                        alt={form.mediaName}
+                        size="base"
+                      />
+                      <s-text>{form.mediaName}</s-text>
+                    </>
+                  ) : (
+                    <s-badge tone="info">
+                      {form.mediaType === "image" ? "Image: " : "Video: "}
+                      {form.mediaName}
+                    </s-badge>
+                  )}
+                  <s-button variant="tertiary" onClick={removeMedia}>
+                    Remove
+                  </s-button>
+                </s-stack>
+                {form.mediaType === "video" ? (
+                  <VideoTimestampFields
+                    start={form.mediaStart}
+                    end={form.mediaEnd}
+                    onChange={(next) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        mediaStart: next.start ?? prev.mediaStart,
+                        mediaEnd: next.end ?? prev.mediaEnd,
+                      }))
+                    }
+                  />
+                ) : null}
               </s-stack>
             ) : (
               <s-stack direction="inline" gap="small-200">

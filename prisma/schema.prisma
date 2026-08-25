@@ -73,6 +73,8 @@ model KnowledgeEntry {
   mediaId         String?
   mediaUrl        String?
   mediaName       String?
+  mediaStartSeconds Int?
+  mediaEndSeconds   Int?
   source          String   @default("manual")
   createdByEmail  String?
   createdAt       DateTime @default(now())

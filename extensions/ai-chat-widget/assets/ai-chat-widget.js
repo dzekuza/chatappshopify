@@ -535,10 +535,13 @@
     // into the rendered text — the model doesn't always drop the label even
     // though it's only supposed to echo the bare URL.
     var LABELED_MEDIA_LINE_REGEX = /^[ \t]*(?:Video|Image)[ \t]*:[ \t]*(https?:\/\/\S+)[ \t]*$/im;
-    var VIDEO_EXT_REGEX = /\.(?:mp4|mov|webm|m3u8)(?:\?|$)/i;
-    var IMAGE_EXT_REGEX = /\.(?:jpe?g|png|gif|webp|svg)(?:\?|$)/i;
-    var VIDEO_URL_REGEX = /https?:\/\/\S+\.(?:mp4|mov|webm|m3u8)(?:\?\S*)?/i;
-    var IMAGE_URL_REGEX = /https?:\/\/\S+\.(?:jpe?g|png|gif|webp|svg)(?:\?\S*)?/i;
+    // The trailing `[?#]` alternative keeps a `#t=10,15` media fragment (a
+    // knowledge entry's video timestamp) attached to the URL instead of
+    // truncating the match at the extension.
+    var VIDEO_EXT_REGEX = /\.(?:mp4|mov|webm|m3u8)(?:[?#]|$)/i;
+    var IMAGE_EXT_REGEX = /\.(?:jpe?g|png|gif|webp|svg)(?:[?#]|$)/i;
+    var VIDEO_URL_REGEX = /https?:\/\/\S+\.(?:mp4|mov|webm|m3u8)(?:[?#]\S*)?/i;
+    var IMAGE_URL_REGEX = /https?:\/\/\S+\.(?:jpe?g|png|gif|webp|svg)(?:[?#]\S*)?/i;
 
     function extractMedia(text) {
       var labeled = text.match(LABELED_MEDIA_LINE_REGEX);
@@ -698,6 +701,47 @@
       container.appendChild(row);
     }
 
+    // Builds a <video> for a URL that may carry a `#t=start,end` media
+    // fragment (a knowledge entry's video timestamp). Most browsers honour
+    // the fragment on their own, but not all of them do for streamed CDN
+    // media, so the start seek and the stop-at-end are enforced here too.
+    function createTimestampedVideo(url) {
+      var video = document.createElement("video");
+      video.className = "aicw-message-video";
+      video.src = url;
+      video.controls = true;
+      video.setAttribute("playsinline", "");
+
+      var fragment = url.match(/#t=(\d+(?:\.\d+)?)?(?:,(\d+(?:\.\d+)?))?/);
+      if (!fragment) return video;
+
+      var start = fragment[1] === undefined ? null : parseFloat(fragment[1]);
+      var end = fragment[2] === undefined ? null : parseFloat(fragment[2]);
+
+      if (start !== null && !isNaN(start)) {
+        video.addEventListener("loadedmetadata", function () {
+          if (video.currentTime < start) video.currentTime = start;
+        });
+      }
+
+      if (end !== null && !isNaN(end)) {
+        // Re-arms whenever the shopper scrubs back before the end, so
+        // replaying the clip works instead of pausing instantly forever.
+        var stopped = false;
+        video.addEventListener("timeupdate", function () {
+          if (video.currentTime < end - 0.25) {
+            stopped = false;
+            return;
+          }
+          if (stopped) return;
+          stopped = true;
+          video.pause();
+        });
+      }
+
+      return video;
+    }
+
     function renderMessageContent(el, text) {
       el.innerHTML = "";
       var media = extractMedia(text);
@@ -718,12 +762,7 @@
       }
 
       if (media.isVideo) {
-        var video = document.createElement("video");
-        video.className = "aicw-message-video";
-        video.src = media.url;
-        video.controls = true;
-        video.setAttribute("playsinline", "");
-        el.appendChild(video);
+        el.appendChild(createTimestampedVideo(media.url));
       } else {
         var image = document.createElement("img");
         image.className = "aicw-message-image";

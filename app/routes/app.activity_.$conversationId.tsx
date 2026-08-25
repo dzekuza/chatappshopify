@@ -7,6 +7,7 @@ import { useLoaderData, useNavigation, Form } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+import { TimestampedVideo } from "../components/timestamped-video";
 
 function formatTime(date: Date) {
   return new Date(date).toLocaleString(undefined, {
@@ -169,8 +170,7 @@ export default function ActivityThread() {
                           <s-image src={m2.url} alt="" inlineSize="fill" />
                         </s-box>
                       ) : (
-                        // eslint-disable-next-line jsx-a11y/media-has-caption
-                        <video key={m2.url} src={m2.url} controls width={240} />
+                        <TimestampedVideo key={m2.url} src={m2.url} width={240} />
                       ),
                     )}
                   </s-stack>

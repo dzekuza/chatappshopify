@@ -11,6 +11,7 @@ import {
 import { textStreamWithProductCards } from "../product-card-stream.server";
 import { resolveGeminiModel } from "../gemini-model.server";
 import prisma from "../db.server";
+import { describeRange, withMediaFragment } from "../media-timestamp";
 
 const MAX_MESSAGES = 20;
 
@@ -86,12 +87,26 @@ type KnowledgeEntryRow = {
   productHandle: string | null;
   mediaType: string | null;
   mediaUrl: string | null;
+  mediaStartSeconds: number | null;
+  mediaEndSeconds: number | null;
 };
 
+// A video's merchant-marked slice rides along as a `#t=start,end` media
+// fragment on the URL — the model only ever echoes the URL, so that's the
+// only channel the range can travel through. The separate "Video timestamp"
+// line is there so the assistant can also say it out loud.
 function mediaLine(entry: KnowledgeEntryRow) {
   if (!entry.mediaUrl) return "";
-  const label = entry.mediaType === "image" ? "Image" : "Video";
-  return `\n${label}: ${entry.mediaUrl}`;
+  if (entry.mediaType === "image") return `\nImage: ${entry.mediaUrl}`;
+  const url = withMediaFragment(
+    entry.mediaUrl,
+    entry.mediaStartSeconds,
+    entry.mediaEndSeconds,
+  );
+  const range = describeRange(entry.mediaStartSeconds, entry.mediaEndSeconds);
+  return range
+    ? `\nVideo: ${url}\nVideo timestamp: the relevant part is ${range}`
+    : `\nVideo: ${url}`;
 }
 
 function knowledgeBasePrompt(entries: KnowledgeEntryRow[]) {
@@ -110,8 +125,13 @@ function knowledgeBasePrompt(entries: KnowledgeEntryRow[]) {
         "facts exactly as given). If an entry has an Image or Video line, " +
         "include just the bare URL on its own line at the end of your reply " +
         "— no 'Image:'/'Video:' label, just the URL by itself — so it can " +
-        "be shown to the shopper. Don't use these answers for unrelated " +
-        "questions.\n\n" +
+        "be shown to the shopper. Copy that URL character for character, " +
+        "including any '#t=...' part at the end — that's what makes the " +
+        "video start at the right moment. If the entry also has a 'Video " +
+        "timestamp' line, say that time range in your own words just " +
+        "before the URL (e.g. \"it's shown from 0:10 to 0:15\"), and never " +
+        "put the timestamp line itself in your reply. Don't use these " +
+        "answers for unrelated questions.\n\n" +
         items,
     );
   }
@@ -129,7 +149,11 @@ function knowledgeBasePrompt(entries: KnowledgeEntryRow[]) {
         "by name, weave its note in naturally alongside the live product " +
         "data from searchProducts — don't just recite it verbatim. If a " +
         "note has an Image or Video line, include just the bare URL on its " +
-        "own line — no 'Image:'/'Video:' label, just the URL by itself. " +
+        "own line — no 'Image:'/'Video:' label, just the URL by itself, " +
+        "copied character for character including any '#t=...' part. If " +
+        "the note also has a 'Video timestamp' line, say that time range " +
+        "in your own words just before the URL, and never put the " +
+        "timestamp line itself in your reply. " +
         "Don't mention a note for a product the shopper isn't asking " +
         "about.\n\n" +
         items,

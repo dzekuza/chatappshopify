@@ -2,6 +2,7 @@ import { useState, type CSSProperties, type ReactNode } from "react";
 import styles from "../../styles/chat-widget-preview.module.css";
 import type { KnowledgeCollection } from "./knowledge-sync-section";
 import { ProductCardRow, type ChatProduct } from "./product-card";
+import { TimestampedVideo } from "../timestamped-video";
 
 type PreviewMessage = {
   role: "user" | "assistant";
@@ -129,10 +130,13 @@ function greetingForNow() {
 // the rendered text — the model doesn't always drop the label even though
 // it's only supposed to echo the bare URL.
 const LABELED_MEDIA_LINE_REGEX = /^[ \t]*(?:Video|Image)[ \t]*:[ \t]*(https?:\/\/\S+)[ \t]*$/im;
-const VIDEO_EXT_REGEX = /\.(?:mp4|mov|webm|m3u8)(?:\?|$)/i;
-const IMAGE_EXT_REGEX = /\.(?:jpe?g|png|gif|webp|svg)(?:\?|$)/i;
-const VIDEO_URL_REGEX = /https?:\/\/\S+\.(?:mp4|mov|webm|m3u8)(?:\?\S*)?/i;
-const IMAGE_URL_REGEX = /https?:\/\/\S+\.(?:jpe?g|png|gif|webp|svg)(?:\?\S*)?/i;
+// The trailing `[?#]` alternative keeps a `#t=10,15` media fragment (a
+// knowledge entry's video timestamp) attached to the URL instead of
+// truncating the match at the extension.
+const VIDEO_EXT_REGEX = /\.(?:mp4|mov|webm|m3u8)(?:[?#]|$)/i;
+const IMAGE_EXT_REGEX = /\.(?:jpe?g|png|gif|webp|svg)(?:[?#]|$)/i;
+const VIDEO_URL_REGEX = /https?:\/\/\S+\.(?:mp4|mov|webm|m3u8)(?:[?#]\S*)?/i;
+const IMAGE_URL_REGEX = /https?:\/\/\S+\.(?:jpe?g|png|gif|webp|svg)(?:[?#]\S*)?/i;
 
 type ExtractedMedia = {
   url: string;
@@ -221,11 +225,8 @@ function renderMessageBody(content: string) {
     <>
       {remainder ? <div>{renderFormattedBlock(remainder)}</div> : null}
       {media.isVideo ? (
-        // eslint-disable-next-line jsx-a11y/media-has-caption -- merchant-uploaded videos have no caption track
-        <video
+        <TimestampedVideo
           src={media.url}
-          controls
-          playsInline
           className={styles.previewMessageVideo}
         />
       ) : (
