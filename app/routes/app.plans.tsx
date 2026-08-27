@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import type { LoaderFunctionArgs } from "react-router";
-import { redirect, useLoaderData, useSearchParams } from "react-router";
+import { redirect, useLoaderData, useNavigation, useSearchParams } from "react-router";
 import {
   authenticate,
   isBillingEnabled,
@@ -56,6 +56,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
             currentPlan: null,
             conversationsThisMonth: 0,
             freeLimit: FREE_PLAN_MONTHLY_CONVERSATIONS,
+            error: null,
           };
         }
       }
@@ -63,18 +64,31 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     }
   }
 
-  const [{ appSubscriptions }, conversationsThisMonth] = await Promise.all([
-    billing.check({ plans: [SERVER_MONTHLY_PLAN, SERVER_PRO_PLAN] }),
-    countConversationsThisMonth(session.shop),
-  ]);
-  const currentPlan = appSubscriptions[0]?.name ?? null;
+  try {
+    const [{ appSubscriptions }, conversationsThisMonth] = await Promise.all([
+      billing.check({ plans: [SERVER_MONTHLY_PLAN, SERVER_PRO_PLAN] }),
+      countConversationsThisMonth(session.shop),
+    ]);
+    const currentPlan = appSubscriptions[0]?.name ?? null;
 
-  return {
-    confirmationUrl: null,
-    currentPlan,
-    conversationsThisMonth,
-    freeLimit: FREE_PLAN_MONTHLY_CONVERSATIONS,
-  };
+    return {
+      confirmationUrl: null,
+      currentPlan,
+      conversationsThisMonth,
+      freeLimit: FREE_PLAN_MONTHLY_CONVERSATIONS,
+      error: null,
+    };
+  } catch {
+    // Billing/usage lookups are best-effort here — surface a banner rather
+    // than taking the whole page down with a generic error boundary.
+    return {
+      confirmationUrl: null,
+      currentPlan: null,
+      conversationsThisMonth: 0,
+      freeLimit: FREE_PLAN_MONTHLY_CONVERSATIONS,
+      error: "Couldn't load your current plan and usage. Some information below may be out of date.",
+    };
+  }
 };
 
 // Plain string literals, not the ../shopify.server import above — that import
@@ -127,12 +141,13 @@ const DISPLAY_ORDER_PLANS = [
 ];
 
 export default function Plans() {
-  const { confirmationUrl, currentPlan, conversationsThisMonth, freeLimit } =
+  const { confirmationUrl, currentPlan, conversationsThisMonth, freeLimit, error } =
     useLoaderData<typeof loader>();
   // No active subscription means the shop is on Free — there is no $0
   // subscription to read back from Shopify.
   const activePlan = currentPlan ?? FREE_PLAN;
   const [searchParams] = useSearchParams();
+  const navigation = useNavigation();
 
   // Shopify's confirmation page can't render inside the app iframe, so it has
   // to be opened on the top window. App Bridge intercepts window.open with a
@@ -153,6 +168,11 @@ export default function Plans() {
 
   return (
     <s-page heading="Choose a plan">
+      {error ? (
+        <s-banner tone="critical" heading="Couldn't load plan details">
+          <s-paragraph>{error}</s-paragraph>
+        </s-banner>
+      ) : null}
       <s-section heading="Pick the plan that fits your store">
         {activePlan === FREE_PLAN ? (
           <s-paragraph>
@@ -191,7 +211,15 @@ export default function Plans() {
                     Free.
                   </s-text>
                 ) : (
-                  <s-button href={planHref(plan.name)} variant="primary">
+                  <s-button
+                    href={planHref(plan.name)}
+                    variant="primary"
+                    {...(navigation.state !== "idle" &&
+                    new URLSearchParams(navigation.location?.search).get("plan") ===
+                      plan.name
+                      ? { loading: true }
+                      : {})}
+                  >
                     Start free trial
                   </s-button>
                 )}

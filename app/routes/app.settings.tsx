@@ -108,40 +108,44 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         }))
     : [];
 
-  const settings = await prisma.widgetSettings.upsert({
-    where: { shop: session.shop },
-    update: {
-      enabled,
-      welcomeMessage,
-      systemPrompt,
-      primaryColor,
-      iconUrl,
-      position,
-      headerTitle,
-      cornerStyle,
-      geminiModel,
-      geminiApiKey,
-      language,
-      knowledgeCollections,
-    },
-    create: {
-      shop: session.shop,
-      enabled,
-      welcomeMessage,
-      systemPrompt,
-      primaryColor,
-      iconUrl,
-      position,
-      headerTitle,
-      cornerStyle,
-      geminiModel,
-      geminiApiKey,
-      language,
-      knowledgeCollections,
-    },
-  });
+  try {
+    const settings = await prisma.widgetSettings.upsert({
+      where: { shop: session.shop },
+      update: {
+        enabled,
+        welcomeMessage,
+        systemPrompt,
+        primaryColor,
+        iconUrl,
+        position,
+        headerTitle,
+        cornerStyle,
+        geminiModel,
+        geminiApiKey,
+        language,
+        knowledgeCollections,
+      },
+      create: {
+        shop: session.shop,
+        enabled,
+        welcomeMessage,
+        systemPrompt,
+        primaryColor,
+        iconUrl,
+        position,
+        headerTitle,
+        cornerStyle,
+        geminiModel,
+        geminiApiKey,
+        language,
+        knowledgeCollections,
+      },
+    });
 
-  return { settings };
+    return { settings };
+  } catch {
+    return { error: "Couldn't save your widget settings. Please try again." };
+  }
 };
 
 export default function SettingsPage() {
@@ -151,6 +155,9 @@ export default function SettingsPage() {
   const [form, setForm] = useState(settings);
   const [isUploadingIcon, setIsUploadingIcon] = useState(false);
   const [iconUploadError, setIconUploadError] = useState<string | null>(null);
+
+  const isSaving = fetcher.state !== "idle";
+  const saveError = fetcher.data && "error" in fetcher.data ? fetcher.data.error : undefined;
 
   const update = <K extends keyof WidgetSettings>(
     key: K,
@@ -211,6 +218,17 @@ export default function SettingsPage() {
       <s-button slot="secondary-actions" href={addToThemeUrl} target="_blank">
         Add to theme
       </s-button>
+
+      {saveError ? (
+        <s-banner tone="critical" heading="Couldn't save settings">
+          <s-paragraph>{saveError}</s-paragraph>
+        </s-banner>
+      ) : null}
+      {isSaving ? (
+        <s-banner tone="info" heading="Saving…">
+          <s-paragraph>Saving your widget settings.</s-paragraph>
+        </s-banner>
+      ) : null}
 
       <form data-save-bar onSubmit={handleSubmit} onReset={handleReset}>
         {/* The icon is updated via file upload — not a native input the
