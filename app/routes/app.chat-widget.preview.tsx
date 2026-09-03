@@ -274,6 +274,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           const keyword = query?.trim();
           const usesCodeSideCollectionFilter =
             Boolean(keyword) && allowedCollectionGids.size > 0;
+          // A collection_id OR-group in the query string (browsing with a
+          // collection scope, no keyword) returns one row per *matching
+          // collection*, not per product — see apps.chat-widget.chat.tsx for
+          // the live-testing case ("only Mira" ever recommended) this fixes.
+          const queryHasCollectionGroup =
+            !usesCodeSideCollectionFilter && Boolean(collectionFilter);
 
           const response = await admin.graphql(
             `#graphql
@@ -306,7 +312,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
                 query: usesCodeSideCollectionFilter
                   ? keyword!
                   : buildProductQuery(keyword, collectionFilter),
-                first: usesCodeSideCollectionFilter ? 25 : 5,
+                first: usesCodeSideCollectionFilter || queryHasCollectionGroup ? 25 : 5,
               },
             },
           );
@@ -321,6 +327,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
               ).some((c) => allowedCollectionGids.has(c.id)),
             );
           }
+
+          const seenHandles = new Set<string>();
+          products = products.filter((p: Record<string, unknown>) => {
+            const handle = String(p.handle ?? "");
+            if (!handle || seenHandles.has(handle)) return false;
+            seenHandles.add(handle);
+            return true;
+          });
 
           // onlineStoreUrl is null whenever a product isn't published to the
           // classic "Online Store" sales channel specifically — several real

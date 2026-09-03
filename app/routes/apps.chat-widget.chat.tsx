@@ -495,6 +495,16 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           // alone and filters to the allowed collections here instead.
           const usesCodeSideCollectionFilter =
             Boolean(keyword) && allowedCollectionGids.size > 0;
+          // A collection_id OR-group in the query string (browsing with a
+          // collection scope, no keyword) returns one row per *matching
+          // collection*, not per product — a product in several allowed
+          // collections shows up several times before any other product
+          // does, which with a plain first:5 confirmed live-testing as
+          // "only Mira" ever getting recommended. Both this and the
+          // code-side-filtered branch above widen the candidate pool and
+          // rely on the handle-based dedupe below to compensate.
+          const queryHasCollectionGroup =
+            !usesCodeSideCollectionFilter && Boolean(collectionFilter);
 
           const response = await admin.graphql(
             `#graphql
@@ -527,7 +537,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
                 query: usesCodeSideCollectionFilter
                   ? keyword!
                   : buildProductQuery(keyword, collectionFilter),
-                first: usesCodeSideCollectionFilter ? 25 : 5,
+                first: usesCodeSideCollectionFilter || queryHasCollectionGroup ? 25 : 5,
               },
             },
           );
@@ -542,6 +552,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
               ).some((c) => allowedCollectionGids.has(c.id)),
             );
           }
+
+          const seenHandles = new Set<string>();
+          products = products.filter((p: Record<string, unknown>) => {
+            const handle = String(p.handle ?? "");
+            if (!handle || seenHandles.has(handle)) return false;
+            seenHandles.add(handle);
+            return true;
+          });
 
           // onlineStoreUrl is null whenever a product isn't published to the
           // classic "Online Store" sales channel specifically — which
