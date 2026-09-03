@@ -53,15 +53,11 @@ export function ProductCardRow({ products }: { products: ChatProduct[] }) {
                   {formatPrice(product.price)}
                 </span>
               ) : null}
-              <span
-                className={
-                  product.inStock
-                    ? styles.previewProductInStock
-                    : styles.previewProductOutOfStock
-                }
-              >
-                {product.inStock ? "In stock" : "Out of stock"}
-              </span>
+              {!product.inStock ? (
+                <span className={styles.previewProductOutOfStock}>
+                  Out of stock
+                </span>
+              ) : null}
             </span>
           </div>
         </a>

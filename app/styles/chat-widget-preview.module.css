@@ -58,7 +58,7 @@
   max-width: calc(100vw - 32px);
   height: 500px;
   max-height: calc(100vh - 120px);
-  background: #ffffff;
+  background: #fafafa;
   border-radius: var(--aicw-preview-radius, 20px);
   box-shadow:
     0 1px 2px rgba(0, 0, 0, 0.04),
@@ -182,15 +182,20 @@
   max-width: 85%;
   padding: 8px 12px;
   border-radius: 14px;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
+/* Kept in sync with .aicw-message-assistant in the storefront widget's
+   ai-chat-widget.css — plain text, no bubble. */
 .previewMessageAssistant {
-  align-self: flex-start;
-  background: #f3f4f6;
+  align-self: stretch;
+  max-width: 100%;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
   color: #1a1a1a;
 }
 
@@ -229,41 +234,43 @@
   max-width: 100%;
 }
 
+/* Figma: https://www.figma.com/design/rofOs7HDouBaGx36STSZuP/PluginsShopify?node-id=365-2906 — kept in sync with .aicw-product-card in the storefront widget's ai-chat-widget.css. */
 .previewProductCard {
   display: flex;
   flex-direction: column;
   flex: 0 0 auto;
   width: 120px;
+  gap: 18px;
+  padding: 8px;
   border-radius: var(--aicw-preview-radius, 12px);
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  overflow: hidden;
   text-decoration: none;
-  color: inherit;
-  background: #ffffff;
+  color: #1a1a1a;
+  background: #f3f4f6;
+}
+
+.previewProductImage,
+.previewProductImagePlaceholder {
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 2;
 }
 
 .previewProductImage {
-  display: block;
-  width: 100%;
-  height: 90px;
   object-fit: cover;
 }
 
 .previewProductImagePlaceholder {
-  width: 100%;
-  height: 90px;
-  background: #f3f4f6;
+  background: #e5e7eb;
 }
 
 .previewProductInfo {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 6px 8px;
+  gap: 8px;
 }
 
 .previewProductTitle {
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 600;
   line-height: 1.3;
   display: -webkit-box;
@@ -275,19 +282,17 @@
 .previewProductMeta {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  font-size: 10px;
+  gap: 4px;
+  font-size: 14px;
 }
 
 .previewProductPrice {
-  font-weight: 600;
-}
-
-.previewProductInStock {
-  color: #16a34a;
+  font-weight: 400;
 }
 
 .previewProductOutOfStock {
+  font-size: 12px;
+  font-weight: 500;
   color: #dc2626;
 }
 
@@ -312,42 +317,41 @@
   margin-bottom: 2px;
 }
 
+/* Kept in sync with .aicw-form in the storefront widget's ai-chat-widget.css
+   — a single horizontal row (attach, input, send). */
 .previewInputArea {
   margin: 12px;
   margin-top: 0;
-  padding: 10px 10px 8px 14px;
+  padding: 6px;
   border-radius: 16px;
   background: #f3f4f6;
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  align-items: flex-end;
+  gap: 8px;
 }
 
 .previewTextarea {
+  flex: 1;
+  min-width: 0;
   border: none;
   background: transparent;
   resize: none;
   outline: none;
   font-family: inherit;
-  font-size: 13px;
+  font-size: 14px;
   color: #1a1a1a;
-  min-height: 20px;
+  min-height: 24px;
   max-height: 80px;
+  padding: 3px 0;
 }
 
 .previewTextarea::placeholder {
-  color: #9ca3af;
-}
-
-.previewInputActions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  color: rgba(26, 26, 26, 0.4);
 }
 
 .previewIconButton {
-  width: 32px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
   border-radius: 999px;
   border: 1px solid rgba(0, 0, 0, 0.08);
   background: #ffffff;
@@ -370,8 +374,8 @@
 }
 
 .previewSendButton {
-  width: 32px;
-  height: 32px;
+  width: 24px;
+  height: 24px;
   border-radius: 999px;
   border: none;
   background: var(--aicw-preview-color, #2563eb);

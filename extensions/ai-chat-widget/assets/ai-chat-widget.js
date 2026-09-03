@@ -6,6 +6,7 @@
   var settingsEndpoint = root.dataset.settingsEndpoint;
   var messagesEndpoint = root.dataset.messagesEndpoint;
   var historyEndpoint = root.dataset.historyEndpoint;
+  var uploadEndpoint = root.dataset.uploadEndpoint;
 
   function parseBlockSettings() {
     try {
@@ -94,6 +95,11 @@
   var lastAgentMessageAt = new Date(0).toISOString();
   var agentPollTimer = null;
   var AGENT_POLL_INTERVAL_MS = 5000;
+  // Shopify Files CDN url for an image the shopper has attached but not yet
+  // sent — appended to the outgoing message as a bare url line (see
+  // extractMedia) once they hit send.
+  var pendingAttachmentUrl = null;
+  var MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 
   function getConversationId() {
     try {
@@ -128,6 +134,30 @@
   }
 
   var contact = getStoredContact();
+
+  // Persists whether the panel was open across a page navigation (e.g. the
+  // assistant sending the shopper to a product page — see navigateToProduct
+  // handling below), so the chat reopens with its history restored instead
+  // of the shopper losing the conversation to a full page load.
+  function getStoredOpenState() {
+    try {
+      return window.sessionStorage.getItem("aicw-open") === "1";
+    } catch (err) {
+      return false;
+    }
+  }
+
+  function storeOpenState(isOpen) {
+    try {
+      if (isOpen) {
+        window.sessionStorage.setItem("aicw-open", "1");
+      } else {
+        window.sessionStorage.removeItem("aicw-open");
+      }
+    } catch (err) {
+      // sessionStorage unavailable (e.g. private browsing) — ignore.
+    }
+  }
 
   function contrastColor(hex) {
     var value = (hex || "").replace("#", "");
@@ -317,16 +347,22 @@
       downArrowIcon() +
       "</button>" +
       "</div>" +
+      '<div class="aicw-attachment-preview" hidden>' +
+      '<img class="aicw-attachment-thumb" alt="" />' +
+      '<span class="aicw-attachment-error" hidden></span>' +
+      '<button type="button" class="aicw-attachment-remove" aria-label="Remove attachment">' +
+      closeIcon() +
+      "</button>" +
+      "</div>" +
       '<form class="aicw-form">' +
-      '<textarea class="aicw-input" rows="1" placeholder="Type a message..."></textarea>' +
-      '<div class="aicw-input-actions">' +
-      '<button type="button" class="aicw-icon-button" disabled aria-label="Attachments not available" title="Attachments not available">' +
+      '<input type="file" class="aicw-attach-input" accept="image/*" hidden />' +
+      '<button type="button" class="aicw-icon-button aicw-attach" aria-label="Attach an image" title="Attach an image">' +
       plusIcon() +
       "</button>" +
+      '<textarea class="aicw-input" rows="1" placeholder="Type a message..."></textarea>' +
       '<button type="submit" class="aicw-send" aria-label="Send message">' +
       upArrowIcon() +
       "</button>" +
-      "</div>" +
       "</form>" +
       "</div>";
 
@@ -346,12 +382,34 @@
     var form = root.querySelector(".aicw-form");
     var input = root.querySelector(".aicw-input");
     var sendBtn = root.querySelector(".aicw-send");
+    var attachBtn = root.querySelector(".aicw-attach");
+    var attachInput = root.querySelector(".aicw-attach-input");
+    var attachmentPreviewEl = root.querySelector(".aicw-attachment-preview");
+    var attachmentThumbEl = root.querySelector(".aicw-attachment-thumb");
+    var attachmentErrorEl = root.querySelector(".aicw-attachment-error");
+    var attachmentRemoveBtn = root.querySelector(".aicw-attachment-remove");
+    var featuredProductsEl = root.querySelector(".aicw-featured-products");
+    var featuredProductsHasProducts = false;
+
+    if (!uploadEndpoint) {
+      attachBtn.disabled = true;
+      attachBtn.setAttribute("aria-label", "Attachments not available");
+      attachBtn.title = "Attachments not available";
+    }
 
     function updateEmptyState() {
       var hasMessages = history.length > 0;
       emptyState.hidden = hasMessages;
       messagesEl.hidden = !hasMessages;
       resetBtn.disabled = !hasMessages;
+      // The featured-products strip is a browsing aid for an empty chat —
+      // once a conversation is under way it just eats into the visible
+      // message area, so it hides for the rest of the conversation. It
+      // reappears after a reset (updateEmptyState runs there too, and
+      // resetBtn's handler clears history first).
+      if (featuredProductsEl && featuredProductsHasProducts) {
+        featuredProductsEl.hidden = hasMessages;
+      }
     }
 
     updateEmptyState();
@@ -388,6 +446,16 @@
     }
 
     restoreHistory();
+
+    // Reopen the panel after a same-tab navigation the assistant triggered
+    // (see extracted.navigateTarget below) — sessionStorage survives a full
+    // page load, so the shopper lands back in the same conversation instead
+    // of having to reopen the bubble themselves.
+    if (contact && getStoredOpenState()) {
+      root.classList.add("aicw-open");
+      input.focus();
+      startAgentPolling();
+    }
 
     function pollForAgentReplies() {
       if (!messagesEndpoint || !contact) return;
@@ -427,10 +495,92 @@
       agentPollTimer = null;
     }
 
+    function showAttachmentError(message) {
+      attachmentErrorEl.textContent = message;
+      attachmentErrorEl.hidden = false;
+      attachmentThumbEl.hidden = true;
+      attachmentPreviewEl.hidden = false;
+    }
+
+    function clearPendingAttachment() {
+      pendingAttachmentUrl = null;
+      attachmentPreviewEl.hidden = true;
+      attachmentThumbEl.hidden = false;
+      attachmentThumbEl.src = "";
+      attachmentErrorEl.hidden = true;
+      attachmentErrorEl.textContent = "";
+    }
+
+    function setPendingAttachment(url) {
+      pendingAttachmentUrl = url;
+      attachmentErrorEl.hidden = true;
+      attachmentThumbEl.hidden = false;
+      attachmentThumbEl.src = url;
+      attachmentPreviewEl.hidden = false;
+    }
+
+    function uploadAttachment(file) {
+      attachBtn.disabled = true;
+      var formData = new FormData();
+      formData.append("file", file);
+
+      fetch(uploadEndpoint, { method: "POST", body: formData })
+        .then(function (res) {
+          return res
+            .json()
+            .catch(function () {
+              return {};
+            })
+            .then(function (data) {
+              return { ok: res.ok, data: data };
+            });
+        })
+        .then(function (result) {
+          if (!result.ok || !result.data || !result.data.url) {
+            showAttachmentError(
+              (result.data && result.data.error) ||
+                "Couldn't upload that image.",
+            );
+            return;
+          }
+          setPendingAttachment(result.data.url);
+        })
+        .catch(function () {
+          showAttachmentError("Couldn't upload that image.");
+        })
+        .finally(function () {
+          attachBtn.disabled = false;
+        });
+    }
+
+    attachBtn.addEventListener("click", function () {
+      attachInput.click();
+    });
+
+    attachInput.addEventListener("change", function () {
+      var file = attachInput.files && attachInput.files[0];
+      attachInput.value = "";
+      if (!file) return;
+      if (file.type.indexOf("image/") !== 0) {
+        showAttachmentError("Only images can be attached.");
+        return;
+      }
+      if (file.size > MAX_ATTACHMENT_BYTES) {
+        showAttachmentError("Image must be smaller than 5MB.");
+        return;
+      }
+      uploadAttachment(file);
+    });
+
+    attachmentRemoveBtn.addEventListener("click", function () {
+      clearPendingAttachment();
+    });
+
     resetBtn.addEventListener("click", function () {
       history = [];
       messagesEl.innerHTML = "";
       updateEmptyState();
+      clearPendingAttachment();
       lastAgentMessageAt = new Date(0).toISOString();
       try {
         window.sessionStorage.removeItem("aicw-conversation-id");
@@ -480,7 +630,9 @@
 
     bubble.addEventListener("click", function () {
       root.classList.toggle("aicw-open");
-      if (!root.classList.contains("aicw-open")) {
+      var isOpen = root.classList.contains("aicw-open");
+      storeOpenState(isOpen);
+      if (!isOpen) {
         stopAgentPolling();
         return;
       }
@@ -494,6 +646,7 @@
 
     closeBtn.addEventListener("click", function () {
       root.classList.remove("aicw-open");
+      storeOpenState(false);
       stopAgentPolling();
     });
 
@@ -616,20 +769,83 @@
       }
     }
 
-    // Matches the sentinel appended by product-card-stream.server.ts after
-    // the stream's natural text ends. Only valid to call once the stream is
-    // fully drained (see the "chunk.done" branch in the submit handler
-    // below) — a partial chunk mid-stream can't be reliably JSON.parse'd.
-    var PRODUCTS_SENTINEL_REGEX = /\n\n<!--AICW_PRODUCTS:(\[.*?\])-->$/;
+    // Matches the sentinel(s) appended by product-card-stream.server.ts
+    // after the stream's natural text ends — see
+    // textStreamWithProductCardsAndNavigation. Only valid to call once the
+    // stream is fully drained (see the "chunk.done" branch in the submit
+    // handler below) — a partial chunk mid-stream can't be reliably
+    // JSON.parse'd. Not anchored to the end of the string, since the two
+    // sentinels can both be present and only one of them is actually last.
+    var PRODUCTS_SENTINEL_REGEX = /\n\n<!--AICW_PRODUCTS:(\[.*?\])-->/;
+    var NAVIGATE_SENTINEL_REGEX = /\n\n<!--AICW_NAVIGATE:(\{.*?\})-->/;
 
     function extractProductCards(text) {
-      var match = text.match(PRODUCTS_SENTINEL_REGEX);
-      if (!match) return { text: text, products: [] };
-      try {
-        return { text: text.slice(0, match.index), products: JSON.parse(match[1]) };
-      } catch (err) {
-        return { text: text, products: [] };
+      var products = [];
+      var navigateTarget = null;
+
+      var productsMatch = text.match(PRODUCTS_SENTINEL_REGEX);
+      if (productsMatch) {
+        try {
+          products = JSON.parse(productsMatch[1]);
+        } catch (err) {
+          products = [];
+        }
+        text =
+          text.slice(0, productsMatch.index) +
+          text.slice(productsMatch.index + productsMatch[0].length);
       }
+
+      var navigateMatch = text.match(NAVIGATE_SENTINEL_REGEX);
+      if (navigateMatch) {
+        try {
+          navigateTarget = JSON.parse(navigateMatch[1]);
+        } catch (err) {
+          navigateTarget = null;
+        }
+        text =
+          text.slice(0, navigateMatch.index) +
+          text.slice(navigateMatch.index + navigateMatch[0].length);
+      }
+
+      return { text: text, products: products, navigateTarget: navigateTarget };
+    }
+
+    // Same-origin product urls only — never hand a shopper's browser off to
+    // an arbitrary host from model output. Relative urls (e.g.
+    // "/products/x") resolve against the current page and are always
+    // same-origin.
+    function isSameOriginUrl(url) {
+      try {
+        return new URL(url, window.location.href).origin === window.location.origin;
+      } catch (err) {
+        return false;
+      }
+    }
+
+    // Navigates the shopper to a product page the assistant picked out.
+    // Runs after a short delay so they have a moment to read the assistant's
+    // confirmation line first. The open flag + conversationId + contact are
+    // all already in sessionStorage, so the reloaded page's widget reopens
+    // with this same conversation (see getStoredOpenState()/restoreHistory
+    // above).
+    var NAVIGATE_DELAY_MS = 900;
+
+    function navigateToProduct(navigateTarget) {
+      if (!navigateTarget || !navigateTarget.url) return;
+      if (!isSameOriginUrl(navigateTarget.url)) return;
+
+      var destination = new URL(navigateTarget.url, window.location.href);
+      if (
+        destination.pathname === window.location.pathname &&
+        destination.search === window.location.search
+      ) {
+        return;
+      }
+
+      storeOpenState(true);
+      window.setTimeout(function () {
+        window.location.href = destination.href;
+      }, NAVIGATE_DELAY_MS);
     }
 
     function formatPrice(price) {
@@ -687,12 +903,15 @@
           meta.appendChild(price);
         }
 
-        var stock = document.createElement("span");
-        stock.className = product.inStock
-          ? "aicw-product-in-stock"
-          : "aicw-product-out-of-stock";
-        stock.textContent = product.inStock ? "In stock" : "Out of stock";
-        meta.appendChild(stock);
+        // Matches the Figma card: in-stock products show just title + price,
+        // with no positive "In stock" label — the meta line only appears at
+        // all when a product needs the out-of-stock callout.
+        if (!product.inStock) {
+          var stock = document.createElement("span");
+          stock.className = "aicw-product-out-of-stock";
+          stock.textContent = "Out of stock";
+          meta.appendChild(stock);
+        }
 
         info.appendChild(meta);
         card.appendChild(info);
@@ -797,10 +1016,13 @@
               inStock: variant.available !== false,
             };
           });
-          var strip = root.querySelector(".aicw-featured-products");
-          if (!strip) return;
-          strip.hidden = false;
-          renderProductCards(strip, mapped);
+          if (!featuredProductsEl) return;
+          featuredProductsHasProducts = true;
+          // The shopper may have already started chatting by the time this
+          // resolves (it's an async storefront fetch) — don't pop the strip
+          // back open over an in-progress conversation.
+          featuredProductsEl.hidden = history.length > 0;
+          renderProductCards(featuredProductsEl, mapped);
         })
         .catch(function () {});
     }
@@ -845,14 +1067,27 @@
     form.addEventListener("submit", async function (event) {
       event.preventDefault();
       var text = input.value.trim();
-      if (!text) return;
+      var attachmentUrl = pendingAttachmentUrl;
+      if (!text && !attachmentUrl) return;
+
+      // The attached image rides along as a bare url line — the same
+      // convention extractMedia() already renders inline for knowledge-base
+      // media, so the shopper's own bubble shows the image with no extra
+      // rendering logic, and the server can pull it back out for Gemini
+      // vision (see ATTACHMENT_IMAGE_URL_REGEX in apps.chat-widget.chat.tsx).
+      var outgoingContent = attachmentUrl
+        ? text
+          ? text + "\n\n" + attachmentUrl
+          : attachmentUrl
+        : text;
 
       input.value = "";
       autoResizeInput();
+      clearPendingAttachment();
       sendBtn.disabled = true;
       scrollToBottom(false);
-      appendMessage("user", text);
-      history.push({ role: "user", content: text });
+      appendMessage("user", outgoingContent);
+      history.push({ role: "user", content: outgoingContent });
 
       var assistantEl = appendMessage("assistant", "");
       renderTypingIndicator(assistantEl);
@@ -915,6 +1150,7 @@
         if (isFollowing) scrollToBottom(false);
 
         history.push({ role: "assistant", content: extracted.text });
+        navigateToProduct(extracted.navigateTarget);
       } catch (err) {
         assistantEl.textContent =
           "Sorry, something went wrong. Please try again.";

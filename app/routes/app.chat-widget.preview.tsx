@@ -74,9 +74,21 @@ function collectionIdFilter(knowledgeCollections: unknown) {
 
 // See apps.chat-widget.chat.tsx for why this can't just be string
 // concatenation — an empty keyword with a leading " AND " is an invalid
-// Shopify search query that silently returns zero products.
+// Shopify search query that silently returns zero products. Also see that
+// file for a second, separate quirk: keyword + collection scope can't both
+// go in the query string at once either (a bare keyword AND'd with a
+// parenthesized collection_id OR-group silently returns zero results even
+// when each half matches alone) — collectionGidSet + the searchProducts
+// tool below handle that combination by filtering in code instead.
 function buildProductQuery(keywords: string | undefined, collectionFilter: string) {
   return [keywords?.trim(), collectionFilter].filter(Boolean).join(" AND ");
+}
+
+function collectionGidSet(knowledgeCollections: unknown): Set<string> {
+  const collections = Array.isArray(knowledgeCollections)
+    ? (knowledgeCollections as KnowledgeCollection[])
+    : [];
+  return new Set(collections.map((c) => String(c?.id ?? "")).filter(Boolean));
 }
 
 type KnowledgeEntryRow = {
@@ -217,6 +229,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   );
   const language = String(body?.language ?? "auto").trim();
   const collectionFilter = collectionIdFilter(body?.knowledgeCollections);
+  const allowedCollectionGids = collectionGidSet(body?.knowledgeCollections);
   const knowledgeEntries = await prisma.knowledgeEntry.findMany({
     where: { shop: session.shop },
   });
@@ -258,10 +271,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             ),
         }),
         execute: async ({ query }) => {
+          const keyword = query?.trim();
+          const usesCodeSideCollectionFilter =
+            Boolean(keyword) && allowedCollectionGids.size > 0;
+
           const response = await admin.graphql(
             `#graphql
-              query SearchProducts($query: String!) {
-                products(first: 5, query: $query) {
+              query SearchProducts($query: String!, $first: Int!) {
+                products(first: $first, query: $query) {
                   nodes {
                     title
                     handle
@@ -276,18 +293,49 @@ export const action = async ({ request }: ActionFunctionArgs) => {
                       url
                     }
                     totalInventory
+                    collections(first: 20) {
+                      nodes {
+                        id
+                      }
+                    }
                   }
                 }
               }`,
-            { variables: { query: buildProductQuery(query, collectionFilter) } },
+            {
+              variables: {
+                query: usesCodeSideCollectionFilter
+                  ? keyword!
+                  : buildProductQuery(keyword, collectionFilter),
+                first: usesCodeSideCollectionFilter ? 25 : 5,
+              },
+            },
           );
           const json = await response.json();
-          const products = json?.data?.products?.nodes ?? [];
+          let products = json?.data?.products?.nodes ?? [];
 
-          const mapped = products.map((p: Record<string, unknown>) => ({
+          if (usesCodeSideCollectionFilter) {
+            products = products.filter((p: Record<string, unknown>) =>
+              (
+                (p.collections as { nodes?: { id: string }[] } | undefined)
+                  ?.nodes ?? []
+              ).some((c) => allowedCollectionGids.has(c.id)),
+            );
+          }
+
+          // onlineStoreUrl is null whenever a product isn't published to the
+          // classic "Online Store" sales channel specifically — several real
+          // stores' catalogs never populate this even for products the
+          // theme renders fine — so it can't be trusted alone. Unlike the
+          // storefront widget (apps.chat-widget.chat.tsx), this preview
+          // opens links from inside the Shopify admin iframe, so the
+          // fallback needs the shop's own absolute domain, not a relative
+          // path.
+          const mapped = products.slice(0, 5).map((p: Record<string, unknown>) => ({
             title: p.title,
             handle: p.handle,
-            url: p.onlineStoreUrl,
+            url:
+              p.onlineStoreUrl ||
+              (p.handle ? `https://${session.shop}/products/${p.handle}` : null),
             price: (p.priceRangeV2 as { minVariantPrice?: unknown } | undefined)
               ?.minVariantPrice,
             image: (p.featuredImage as { url?: unknown } | undefined)?.url,
@@ -390,6 +438,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           return { requested: true, reason: reason ?? null, preview: true };
         },
       }),
+      // No navigateToProduct tool here: this preview renders inside the
+      // Shopify admin, not on a real storefront page, so there's nowhere
+      // meaningful to navigate to. See apps.chat-widget.chat.tsx.
     },
   });
 

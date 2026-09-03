@@ -16,7 +16,10 @@ import {
   storeContextPrompt,
 } from "../chat-guardrails.server";
 import { matchKnowledgeEntry } from "../knowledge-query-matcher.server";
-import { textStreamWithProductCards } from "../product-card-stream.server";
+import {
+  textStreamWithProductCardsAndNavigation,
+  type NavigateTarget,
+} from "../product-card-stream.server";
 import { resolveGeminiModel } from "../gemini-model.server";
 
 const MAX_MESSAGES = 20;
@@ -71,6 +74,64 @@ const HANDOFF_TOOL_INSTRUCTION =
   "notified and will follow up, while still offering to keep helping in the " +
   "meantime.";
 
+const NAVIGATE_TOOL_INSTRUCTION =
+  "Call the navigateToProduct tool when the shopper is asking about, or you " +
+  "are confidently recommending, ONE specific product they should go look " +
+  "at — for example they name a product, ask to see or open its page, or " +
+  "you're making a single clear recommendation and they seem ready to view " +
+  "it. Call searchProducts first if you haven't already, then pass that " +
+  "product's exact url and title to navigateToProduct — this sends the " +
+  "shopper's browser straight to that product page. Never call it when " +
+  "showing a list of several options for them to browse, and call it at " +
+  "most once per reply. Still write a short reply confirming you're taking " +
+  "them there.";
+
+// A shopper's attached image rides along as a bare Shopify Files CDN url on
+// its own line in the message content — the same convention
+// knowledgeBasePrompt uses for merchant media — so it persists and renders
+// inline client-side (see extractMedia in ai-chat-widget.js) with no schema
+// change. Here it's pulled back out and handed to Gemini as an actual vision
+// input instead of just text the model would otherwise only be able to echo.
+const ATTACHMENT_IMAGE_URL_REGEX =
+  /https?:\/\/\S+\.(?:jpe?g|png|gif|webp)(?:\?\S*)?/i;
+
+// The regex above matches on shape alone, but message text is shopper input
+// — without this allowlist a shopper could type any "https://…/x.jpg"-shaped
+// url (an internal address, a cloud metadata endpoint, etc.) and have it
+// handed straight to the model as an image-fetch target (SSRF). Only ever
+// treat a match as a real attachment when it's actually the Shopify Files
+// CDN host our own apps.chat-widget.upload.tsx uploads to.
+const ALLOWED_ATTACHMENT_HOSTS = new Set(["cdn.shopify.com"]);
+
+function isAllowedAttachmentUrl(url: string) {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  return (
+    parsed.protocol === "https:" &&
+    ALLOWED_ATTACHMENT_HOSTS.has(parsed.hostname.toLowerCase().replace(/\.$/, ""))
+  );
+}
+
+function toGeminiMessageContent(content: string): ModelMessage["content"] {
+  const match = content.match(ATTACHMENT_IMAGE_URL_REGEX);
+  if (!match || !isAllowedAttachmentUrl(match[0])) return content;
+
+  const url = match[0];
+  const text = (
+    content.slice(0, match.index) +
+    content.slice((match.index ?? 0) + url.length)
+  ).trim();
+
+  return [
+    ...(text ? [{ type: "text" as const, text }] : []),
+    { type: "image" as const, image: url },
+  ];
+}
+
 function normalizePhone(value: string | null | undefined) {
   return (value ?? "").replace(/\D/g, "").slice(-9);
 }
@@ -99,8 +160,27 @@ function collectionIdFilter(knowledgeCollections: unknown) {
 // when there's no keyword term produces an invalid query that silently
 // matches nothing, which is what caused "I couldn't find any products" for
 // generic browsing questions.
+//
+// Only ever call this when at most one of the two is actually present — a
+// bare keyword AND'd with a parenthesized collection_id OR-group is a
+// separate, confirmed Shopify Admin search-query quirk that also silently
+// returns zero results even when the keyword alone, and the collection
+// group alone, both match. See collectionGidSet + the searchProducts tool
+// below for how that combination is actually handled (fetch by keyword,
+// filter to the allowed collections in code).
 function buildProductQuery(keywords: string | undefined, collectionFilter: string) {
   return [keywords?.trim(), collectionFilter].filter(Boolean).join(" AND ");
+}
+
+// Raw collection GIDs (not the query-string fragment collectionIdFilter
+// builds) for the code-side filtering path above — compared directly
+// against the `collections(first: N) { nodes { id } }` a search result
+// carries.
+function collectionGidSet(knowledgeCollections: unknown): Set<string> {
+  const collections = Array.isArray(knowledgeCollections)
+    ? (knowledgeCollections as KnowledgeCollection[])
+    : [];
+  return new Set(collections.map((c) => String(c?.id ?? "")).filter(Boolean));
 }
 
 type KnowledgeEntryRow = {
@@ -316,6 +396,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     Boolean(settings.geminiApiKey),
   );
   const collectionFilter = collectionIdFilter(settings.knowledgeCollections);
+  const allowedCollectionGids = collectionGidSet(settings.knowledgeCollections);
   const knowledgeEntries = await prisma.knowledgeEntry.findMany({
     where: { shop: session.shop },
   });
@@ -350,6 +431,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   // as product cards on the client — see the sentinel appended to the
   // response stream below.
   let lastProductResults: unknown[] | null = null;
+  // Set by the navigateToProduct tool when the assistant wants to send the
+  // shopper's browser to a specific product page — see the sentinel
+  // appended to the response stream below.
+  let navigateTarget: NavigateTarget | null = null;
 
   const result = streamText({
     model: google(geminiModel),
@@ -361,12 +446,22 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       ORDER_TOOL_INSTRUCTION,
       PERSONALIZATION_TOOL_INSTRUCTION,
       HANDOFF_TOOL_INSTRUCTION,
+      NAVIGATE_TOOL_INSTRUCTION,
       // Last, so it overrides anything the merchant configured above.
       FACTUAL_ACCURACY_GUARDRAILS,
     ]
       .filter(Boolean)
       .join("\n\n"),
-    messages,
+    // A shopper's attached image comes through here as a bare url inside a
+    // plain-string user message (see ATTACHMENT_IMAGE_URL_REGEX above) —
+    // `messages` itself stays plain strings throughout (it's also used for
+    // DB persistence and knowledge-query logging below), so the multimodal
+    // conversion only happens on this derived copy handed to the model.
+    messages: messages.map((m) =>
+      m.role === "user"
+        ? ({ role: m.role, content: toGeminiMessageContent(String(m.content)) } as ModelMessage)
+        : m,
+    ),
     stopWhen: stepCountIs(4),
     onFinish: async ({ text }) => {
       if (text) {
@@ -393,10 +488,18 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             ),
         }),
         execute: async ({ query }) => {
+          const keyword = query?.trim();
+          // See buildProductQuery/collectionGidSet above: keyword +
+          // collection scope can't both go in the query string at once, so
+          // that combination fetches a wider candidate pool by keyword
+          // alone and filters to the allowed collections here instead.
+          const usesCodeSideCollectionFilter =
+            Boolean(keyword) && allowedCollectionGids.size > 0;
+
           const response = await admin.graphql(
             `#graphql
-              query SearchProducts($query: String!) {
-                products(first: 5, query: $query) {
+              query SearchProducts($query: String!, $first: Int!) {
+                products(first: $first, query: $query) {
                   nodes {
                     title
                     handle
@@ -411,18 +514,47 @@ export const action = async ({ request }: ActionFunctionArgs) => {
                       url
                     }
                     totalInventory
+                    collections(first: 20) {
+                      nodes {
+                        id
+                      }
+                    }
                   }
                 }
               }`,
-            { variables: { query: buildProductQuery(query, collectionFilter) } },
+            {
+              variables: {
+                query: usesCodeSideCollectionFilter
+                  ? keyword!
+                  : buildProductQuery(keyword, collectionFilter),
+                first: usesCodeSideCollectionFilter ? 25 : 5,
+              },
+            },
           );
           const json = await response.json();
-          const products = json?.data?.products?.nodes ?? [];
+          let products = json?.data?.products?.nodes ?? [];
 
-          const mapped = products.map((p: Record<string, unknown>) => ({
+          if (usesCodeSideCollectionFilter) {
+            products = products.filter((p: Record<string, unknown>) =>
+              (
+                (p.collections as { nodes?: { id: string }[] } | undefined)
+                  ?.nodes ?? []
+              ).some((c) => allowedCollectionGids.has(c.id)),
+            );
+          }
+
+          // onlineStoreUrl is null whenever a product isn't published to the
+          // classic "Online Store" sales channel specifically — which
+          // several real stores' catalogs never populate even for products
+          // the theme itself renders fine — so it can't be trusted alone.
+          // /products/<handle> is the same relative-path fallback
+          // fetchFeaturedProducts() already relies on client-side, and
+          // resolves correctly since the widget only ever runs embedded on
+          // the storefront it's searching.
+          const mapped = products.slice(0, 5).map((p: Record<string, unknown>) => ({
             title: p.title,
             handle: p.handle,
-            url: p.onlineStoreUrl,
+            url: p.onlineStoreUrl || (p.handle ? `/products/${p.handle}` : null),
             price: (p.priceRangeV2 as { minVariantPrice?: unknown } | undefined)
               ?.minVariantPrice,
             image: (p.featuredImage as { url?: unknown } | undefined)?.url,
@@ -587,10 +719,33 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           return { requested: true, reason: reason ?? null };
         },
       }),
+      navigateToProduct: tool({
+        description:
+          "Send the shopper's browser to a specific product's page. Call this only when there's ONE clear product they're asking about or you're confidently recommending — never when presenting a list of several options to browse. Use the exact url (and title, if you have it) from a prior searchProducts result.",
+        inputSchema: z.object({
+          url: z
+            .string()
+            .describe("The product's storefront url, exactly as returned by searchProducts"),
+          title: z
+            .string()
+            .optional()
+            .describe("The product's title, for reference only"),
+        }),
+        execute: async ({ url, title }) => {
+          if (!url) {
+            return { navigated: false, reason: "missing_url" };
+          }
+          navigateTarget = { url, title: title ?? null };
+          return { navigated: true };
+        },
+      }),
     },
   });
 
-  return textStreamWithProductCards(result, () => lastProductResults, {
-    "X-Conversation-Id": conversationId,
-  });
+  return textStreamWithProductCardsAndNavigation(
+    result,
+    () => lastProductResults,
+    () => navigateTarget,
+    { "X-Conversation-Id": conversationId },
+  );
 };

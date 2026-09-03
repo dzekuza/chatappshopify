@@ -16,6 +16,7 @@
   data-settings-endpoint="{{ shop.url }}/apps/chat-widget/settings"
   data-messages-endpoint="{{ shop.url }}/apps/chat-widget/messages"
   data-history-endpoint="{{ shop.url }}/apps/chat-widget/history"
+  data-upload-endpoint="{{ shop.url }}/apps/chat-widget/upload"
   data-block-settings='{
     "primaryColor": {{ block.settings.primary_color | json }},
     "iconUrl": {% if block.settings.icon %}{{ block.settings.icon | image_url: width: 128 | json }}{% else %}null{% endif %},

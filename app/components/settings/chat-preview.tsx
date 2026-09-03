@@ -478,6 +478,15 @@ export function ChatPreview({
                 sendPreviewMessage();
               }}
             >
+              <button
+                type="button"
+                className={styles.previewIconButton}
+                disabled
+                aria-label="Attachments not available in preview"
+                title="Attachments not available in preview"
+              >
+                <PlusIcon />
+              </button>
               <textarea
                 className={styles.previewTextarea}
                 rows={1}
@@ -492,25 +501,14 @@ export function ChatPreview({
                   }
                 }}
               />
-              <div className={styles.previewInputActions}>
-                <button
-                  type="button"
-                  className={styles.previewIconButton}
-                  disabled
-                  aria-label="Attachments not available in preview"
-                  title="Attachments not available in preview"
-                >
-                  <PlusIcon />
-                </button>
-                <button
-                  type="submit"
-                  className={styles.previewSendButton}
-                  disabled={isPreviewSending || !previewInput.trim()}
-                  aria-label="Send message"
-                >
-                  <ArrowUpIcon />
-                </button>
-              </div>
+              <button
+                type="submit"
+                className={styles.previewSendButton}
+                disabled={isPreviewSending || !previewInput.trim()}
+                aria-label="Send message"
+              >
+                <ArrowUpIcon />
+              </button>
             </form>
           </div>
 
