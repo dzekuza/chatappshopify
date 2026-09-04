@@ -31,6 +31,7 @@ import {
   type KnowledgeCollection,
 } from "../components/settings/knowledge-sync-section";
 import { StoreAuditSection } from "../components/settings/store-audit-section";
+import { CatalogSyncSection } from "../components/knowledge/catalog-sync-section";
 
 const RECENT_QUERY_LIMIT = 50;
 const UNANSWERED_QUESTION_LIMIT = 20;
@@ -38,8 +39,14 @@ const UNANSWERED_QUESTION_LIMIT = 20;
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
 
-  const [entries, recentQueries, unansweredQueries, widgetSettings, storeAudit] =
-    await Promise.all([
+  const [
+    entries,
+    recentQueries,
+    unansweredQueries,
+    widgetSettings,
+    storeAudit,
+    catalogSync,
+  ] = await Promise.all([
       prisma.knowledgeEntry.findMany({
         where: { shop: session.shop },
         orderBy: { createdAt: "desc" },
@@ -64,13 +71,30 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         where: { shop: session.shop },
         select: { status: true, lastRunAt: true, lastError: true, storeContext: true },
       }),
+      prisma.catalogSync.findUnique({
+        where: { shop: session.shop },
+        select: {
+          status: true,
+          productCount: true,
+          pageCount: true,
+          lastRunAt: true,
+          lastError: true,
+        },
+      }),
     ]);
 
   const knowledgeCollections = Array.isArray(widgetSettings.knowledgeCollections)
     ? (widgetSettings.knowledgeCollections as unknown as KnowledgeCollection[])
     : [];
 
-  return { entries, recentQueries, unansweredQueries, knowledgeCollections, storeAudit };
+  return {
+    entries,
+    recentQueries,
+    unansweredQueries,
+    knowledgeCollections,
+    storeAudit,
+    catalogSync,
+  };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -94,8 +118,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function Knowledge() {
-  const { entries, recentQueries, unansweredQueries, knowledgeCollections, storeAudit } =
-    useLoaderData<typeof loader>();
+  const {
+    entries,
+    recentQueries,
+    unansweredQueries,
+    knowledgeCollections,
+    storeAudit,
+    catalogSync,
+  } = useLoaderData<typeof loader>();
   const fetcher = useFetcher<typeof action>();
   const collectionsFetcher = useFetcher<{
     ok: boolean;
@@ -109,6 +139,15 @@ export default function Knowledge() {
       storeContext: string | null;
     } | null;
   }>();
+  const catalogFetcher = useFetcher<{
+    catalogSync: {
+      status: string;
+      productCount: number;
+      pageCount: number;
+      lastRunAt: string | Date | null;
+      lastError: string | null;
+    } | null;
+  }>();
   const modalRef = useRef<KnowledgeEntryModalHandle>(null);
   const shopify = useAppBridge();
   const [isSyncingCollections, setIsSyncingCollections] = useState(false);
@@ -116,6 +155,9 @@ export default function Knowledge() {
   const currentCollections =
     collectionsFetcher.data?.knowledgeCollections ?? knowledgeCollections;
   const currentAudit = auditFetcher.data?.audit ?? storeAudit;
+  const currentCatalogSync = catalogFetcher.data?.catalogSync ?? catalogSync;
+  const isSyncingCatalog =
+    catalogFetcher.state !== "idle" || currentCatalogSync?.status === "running";
   const isRunningAudit =
     auditFetcher.state !== "idle" || currentAudit?.status === "running";
   const isSaving = fetcher.state !== "idle";
@@ -152,6 +194,10 @@ export default function Knowledge() {
     saveCollections(currentCollections.filter((c) => c.id !== id));
   };
 
+  const syncCatalog = () => {
+    catalogFetcher.submit(null, { method: "POST", action: "/app/catalog-sync" });
+  };
+
   const refreshAudit = () => {
     auditFetcher.submit(null, { method: "POST", action: "/app/store-audit" });
   };
@@ -176,7 +222,12 @@ export default function Knowledge() {
 
   return (
     <s-page heading="Knowledge">
-      <s-button slot="primary-action" commandFor="knowledge-modal" onClick={openNewEntry}>
+      <s-button
+        slot="primary-action"
+        icon="plus"
+        commandFor="knowledge-modal"
+        onClick={openNewEntry}
+      >
         Add question
       </s-button>
 
@@ -198,6 +249,12 @@ export default function Knowledge() {
         isSyncingCollections={isSyncingCollections}
         onSync={syncCollections}
         onRemove={removeCollection}
+      />
+
+      <CatalogSyncSection
+        catalogSync={currentCatalogSync}
+        isSyncing={isSyncingCatalog}
+        onSync={syncCatalog}
       />
 
       <StoreAuditSection

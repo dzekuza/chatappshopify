@@ -21,6 +21,15 @@ import {
   type NavigateTarget,
 } from "../product-card-stream.server";
 import { resolveGeminiModel } from "../gemini-model.server";
+import {
+  MAX_PRODUCT_DESCRIPTION_CHARS,
+  STOCK_TOOL_INSTRUCTION,
+  summarizeVariants,
+} from "../product-variants.server";
+import {
+  catalogOverviewPrompt,
+  storePagesPrompt,
+} from "../catalog-context.server";
 
 const MAX_MESSAGES = 20;
 
@@ -404,6 +413,28 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     where: { shop: session.shop },
     select: { storeContext: true },
   });
+  // The synced catalogue snapshot and page index (see catalog-sync.server.ts).
+  // Both are orientation only — the snapshot deliberately holds no inventory,
+  // so availability still comes from the live searchProducts call below.
+  const [catalogProducts, storePages] = await Promise.all([
+    prisma.catalogProduct.findMany({
+      where: { shop: session.shop },
+      select: {
+        title: true,
+        productType: true,
+        vendor: true,
+        minPrice: true,
+        maxPrice: true,
+        currency: true,
+        collectionTitles: true,
+      },
+    }),
+    prisma.storePage.findMany({
+      where: { shop: session.shop },
+      select: { url: true, title: true, type: true },
+      orderBy: { type: "asc" },
+    }),
+  ]);
 
   // Log the shopper's question for the "top unanswered questions" panel —
   // only real storefront traffic, never the admin preview (see
@@ -443,6 +474,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       storeContextPrompt(storeAudit?.storeContext),
       languageInstruction(settings.language),
       knowledgeBasePrompt(knowledgeEntries),
+      catalogOverviewPrompt(catalogProducts),
+      storePagesPrompt(storePages),
+      STOCK_TOOL_INSTRUCTION,
       ORDER_TOOL_INSTRUCTION,
       PERSONALIZATION_TOOL_INSTRUCTION,
       HANDOFF_TOOL_INSTRUCTION,
@@ -524,6 +558,18 @@ export const action = async ({ request }: ActionFunctionArgs) => {
                       url
                     }
                     totalInventory
+                    productType
+                    description
+                    variants(first: 25) {
+                      nodes {
+                        title
+                        availableForSale
+                        selectedOptions {
+                          name
+                          value
+                        }
+                      }
+                    }
                     collections(first: 20) {
                       nodes {
                         id
@@ -577,6 +623,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
               ?.minVariantPrice,
             image: (p.featuredImage as { url?: unknown } | undefined)?.url,
             inStock: ((p.totalInventory as number) ?? 0) > 0,
+            productType: p.productType || null,
+            description: p.description
+              ? String(p.description).slice(0, MAX_PRODUCT_DESCRIPTION_CHARS)
+              : null,
+            // Variant-level availability, so the assistant can say "size M is
+            // sold out but L and XL are in" instead of only knowing whether
+            // the product as a whole has any stock at all. Omitted for
+            // single-variant products, where it's just noise in the prompt.
+            variants: summarizeVariants(p.variants),
           }));
 
           lastProductResults = mapped.length > 0 ? mapped : null;

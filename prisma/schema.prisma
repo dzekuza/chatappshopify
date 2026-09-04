@@ -17,21 +17,21 @@ datasource db {
 }
 
 model Session {
-  id            String    @id
-  shop          String
-  state         String
-  isOnline      Boolean   @default(false)
-  scope         String?
-  expires       DateTime?
-  accessToken   String
-  userId        BigInt?
-  firstName     String?
-  lastName      String?
-  email         String?
-  accountOwner  Boolean   @default(false)
-  locale        String?
-  collaborator  Boolean?  @default(false)
-  emailVerified Boolean?  @default(false)
+  id                  String    @id
+  shop                String
+  state               String
+  isOnline            Boolean   @default(false)
+  scope               String?
+  expires             DateTime?
+  accessToken         String
+  userId              BigInt?
+  firstName           String?
+  lastName            String?
+  email               String?
+  accountOwner        Boolean   @default(false)
+  locale              String?
+  collaborator        Boolean?  @default(false)
+  emailVerified       Boolean?  @default(false)
   refreshToken        String?
   refreshTokenExpires DateTime?
 
@@ -39,46 +39,46 @@ model Session {
 }
 
 model WidgetSettings {
-  id              String   @id @default(cuid())
-  shop            String   @unique
-  enabled         Boolean  @default(true)
-  welcomeMessage  String   @default("Hi! How can I help you find what you're looking for?")
-  systemPrompt    String   @default("You are a friendly, concise shopping assistant for this store. Use the product lookup tool to answer questions about products, pricing, and availability. Never invent products or prices.")
-  primaryColor    String   @default("#1a1a1a")
-  iconUrl         String?
-  position        String   @default("bottom-right")
-  headerTitle     String   @default("Chat with us")
-  cornerStyle     String   @default("rounded")
-  geminiModel     String   @default("gemini-2.5-flash")
-  geminiApiKey    String?
-  language        String   @default("auto")
-  knowledgeCollections Json @default("[]")
-  convertedCustomersCount      Int?
-  convertedCustomersCheckedAt  DateTime?
-  updatedAt       DateTime @updatedAt
+  id                          String    @id @default(cuid())
+  shop                        String    @unique
+  enabled                     Boolean   @default(true)
+  welcomeMessage              String    @default("Hi! How can I help you find what you're looking for?")
+  systemPrompt                String    @default("You are a friendly, concise shopping assistant for this store. Use the product lookup tool to answer questions about products, pricing, and availability. Never invent products or prices.")
+  primaryColor                String    @default("#1a1a1a")
+  iconUrl                     String?
+  position                    String    @default("bottom-right")
+  headerTitle                 String    @default("Chat with us")
+  cornerStyle                 String    @default("rounded")
+  geminiModel                 String    @default("gemini-2.5-flash")
+  geminiApiKey                String?
+  language                    String    @default("auto")
+  knowledgeCollections        Json      @default("[]")
+  convertedCustomersCount     Int?
+  convertedCustomersCheckedAt DateTime?
+  updatedAt                   DateTime  @updatedAt
 
   @@schema("chat_widget")
 }
 
 model KnowledgeEntry {
-  id              String   @id @default(cuid())
-  shop            String
-  type            String   @default("freeform")
-  question        String?
-  answer          String
-  productId       String?
-  productTitle    String?
-  productHandle   String?
-  mediaType       String?
-  mediaId         String?
-  mediaUrl        String?
-  mediaName       String?
+  id                String   @id @default(cuid())
+  shop              String
+  type              String   @default("freeform")
+  question          String?
+  answer            String
+  productId         String?
+  productTitle      String?
+  productHandle     String?
+  mediaType         String?
+  mediaId           String?
+  mediaUrl          String?
+  mediaName         String?
   mediaStartSeconds Int?
   mediaEndSeconds   Int?
-  source          String   @default("manual")
-  createdByEmail  String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  source            String   @default("manual")
+  createdByEmail    String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   @@index([shop])
   @@schema("chat_widget")
@@ -139,5 +139,68 @@ model ChatMessage {
 
   @@index([shop, conversationId, createdAt])
   @@index([shop, createdAt])
+  @@schema("chat_widget")
+}
+
+// A synced snapshot of the catalog's *shape* — titles, handles, URLs, types,
+// options and collection membership. Deliberately does NOT store inventory:
+// stock changes constantly, and an assistant that quotes a stale "in stock"
+// is exactly what FACTUAL_ACCURACY_GUARDRAILS forbids. Availability is always
+// read live through the searchProducts tool; this table exists so the
+// assistant knows what the catalog *contains* without having to guess a
+// keyword first (e.g. "what do you sell?", "do you have anything under 50?").
+model CatalogProduct {
+  id               String   @id @default(cuid())
+  shop             String
+  productId        String
+  title            String
+  handle           String
+  url              String?
+  productType      String?
+  vendor           String?
+  status           String?
+  description      String?
+  tags             Json     @default("[]")
+  options          Json     @default("[]")
+  collectionTitles Json     @default("[]")
+  minPrice         String?
+  maxPrice         String?
+  currency         String?
+  syncedAt         DateTime @default(now())
+
+  @@unique([shop, productId])
+  @@index([shop])
+  @@schema("chat_widget")
+}
+
+// An index of the store's linkable URLs — content pages, collection pages and
+// policy pages. Built from the public sitemap (no extra access scope needed;
+// the Admin pages API would require read_content, forcing every merchant to
+// re-authorise). Lets the assistant point a shopper at the right page instead
+// of describing it from the prose store-context brief.
+model StorePage {
+  id       String   @id @default(cuid())
+  shop     String
+  url      String
+  title    String?
+  type     String   @default("page")
+  syncedAt DateTime @default(now())
+
+  @@unique([shop, url])
+  @@index([shop])
+  @@schema("chat_widget")
+}
+
+model CatalogSync {
+  id           String    @id @default(cuid())
+  shop         String    @unique
+  status       String    @default("pending")
+  productCount Int       @default(0)
+  pageCount    Int       @default(0)
+  lastRunAt    DateTime?
+  lastError    String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
   @@schema("chat_widget")
 }
