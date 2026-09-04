@@ -23,8 +23,16 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # `npm run build` also runs `prisma migrate deploy`, which needs real
+      # credentials and would apply migrations to the production database. That
+      # belongs to the Vercel build, not to this verification gate — so run the
+      # offline half only. Prisma still resolves env() at schema-validation time,
+      # hence the placeholder URLs; nothing here opens a connection.
       - name: Build
-        run: npm run build
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci?schema=chat_widget
+          DIRECT_URL: postgresql://ci:ci@localhost:5432/ci?schema=chat_widget
+        run: npx prisma generate && npx react-router build
 
       - name: shopify app deploy
         env:
