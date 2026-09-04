@@ -1,12 +1,23 @@
 import { generateText } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import prisma from "./db.server";
+import {
+  crawlHomepageLinks,
+  fetchWithTimeout,
+  resolveStorefront,
+  walkSitemap,
+  type StorefrontPlatform,
+} from "./storefront.server";
 
 // Automatically gathers background context about a store — its policies plus
 // a handful of standard pages (About/Shipping/Returns/FAQ/Contact) — so the
 // chat assistant has more than just the merchant's manually-written FAQ to
 // draw on. Runs once on install (see shopify.server.ts's afterAuth hook) and
 // is re-runnable on demand from the Settings page.
+//
+// Page discovery goes through storefront.server.ts so it works on a headless
+// (Hydrogen/Oxygen) storefront too, where content routes don't have to sit
+// under /pages/ and there may be no sitemap at all.
 
 const MAX_STORE_CONTEXT_CHARS = 4000;
 const PAGE_FETCH_TIMEOUT_MS = 5000;
@@ -23,6 +34,18 @@ const PRIORITY_PATH_PATTERNS = [
   /\/policies\//i,
 ];
 
+// A headless storefront routes its About/FAQ/Shipping pages wherever it likes
+// — /about, /en-us/faq, /help/returns — so the Liquid-shaped patterns above
+// would match nothing. These look for the same topics at any depth.
+const HEADLESS_PATH_PATTERNS = [
+  /(^|\/)about(-us)?(\/|$)/i,
+  /(^|\/)(faq|faqs|help|support)(\/|$)/i,
+  /(^|\/)(shipping|delivery)(\/|$)/i,
+  /(^|\/)(returns?|refunds?|exchanges?)(\/|$)/i,
+  /(^|\/)contact(-us)?(\/|$)/i,
+  /(^|\/)(policies|terms|privacy)(\/|$)/i,
+];
+
 type SourceUrl = { url: string; type: "sitemap" | "policy" | "page"; title?: string };
 
 type Policies = {
@@ -35,16 +58,6 @@ type Policies = {
 type AdminGraphqlClient = {
   graphql: (query: string, opts?: { variables?: Record<string, unknown> }) => Promise<Response>;
 };
-
-async function fetchWithTimeout(url: string, timeoutMs: number) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { signal: controller.signal });
-  } finally {
-    clearTimeout(timeout);
-  }
-}
 
 function stripHtml(html: string) {
   return html
@@ -84,66 +97,57 @@ async function fetchStorePolicies(admin: AdminGraphqlClient): Promise<Policies> 
   }
 }
 
-async function fetchPrimaryDomain(admin: AdminGraphqlClient): Promise<string | null> {
+function matchesPriority(url: string, platform: StorefrontPlatform) {
+  if (PRIORITY_PATH_PATTERNS.some((pattern) => pattern.test(url))) return true;
+  if (platform === "online-store") return false;
+  let path: string;
   try {
-    const response = await admin.graphql(
-      `#graphql
-        query ShopUrl {
-          shop {
-            primaryDomain { url }
-          }
-        }`,
-    );
-    const json = await response.json();
-    return json?.data?.shop?.primaryDomain?.url ?? null;
+    path = new URL(url).pathname;
   } catch {
-    return null;
+    path = url;
   }
+  return HEADLESS_PATH_PATTERNS.some((pattern) => pattern.test(path));
 }
 
-function extractSitemapUrls(xml: string): string[] {
-  const matches = xml.match(/<loc>([^<]+)<\/loc>/gi) ?? [];
-  return matches.map((m) => m.replace(/<\/?loc>/gi, "").trim()).filter(Boolean);
-}
-
-async function discoverCandidateUrls(storeUrl: string, deadline: number): Promise<SourceUrl[]> {
+async function discoverCandidateUrls(
+  storeUrl: string,
+  platform: StorefrontPlatform,
+  deadline: number,
+): Promise<SourceUrl[]> {
+  const seen = new Set<string>();
   const candidates: SourceUrl[] = [];
-  try {
-    if (Date.now() > deadline) return candidates;
-    const response = await fetchWithTimeout(`${storeUrl}/sitemap.xml`, PAGE_FETCH_TIMEOUT_MS);
-    if (!response.ok) return candidates;
-    const xml = await response.text();
-    const topLevelUrls = extractSitemapUrls(xml);
 
-    // Nested sitemaps (sitemap_pages_1.xml etc.) vs. direct page entries.
-    const nestedSitemaps = topLevelUrls.filter((u) => /sitemap.*\.xml$/i.test(u));
-    const directUrls = topLevelUrls.filter((u) => !/sitemap.*\.xml$/i.test(u));
-
-    for (const u of directUrls) {
-      if (PRIORITY_PATH_PATTERNS.some((p) => p.test(u))) {
-        candidates.push({ url: u, type: "sitemap" });
-      }
+  const collect = (urls: string[]) => {
+    for (const url of urls) {
+      if (candidates.length >= MAX_CANDIDATE_PAGES) return;
+      if (seen.has(url) || !matchesPriority(url, platform)) continue;
+      seen.add(url);
+      candidates.push({ url, type: "sitemap" });
     }
+  };
 
-    for (const nested of nestedSitemaps.slice(0, 5)) {
-      if (Date.now() > deadline || candidates.length >= MAX_CANDIDATE_PAGES) break;
-      try {
-        const nestedResponse = await fetchWithTimeout(nested, PAGE_FETCH_TIMEOUT_MS);
-        if (!nestedResponse.ok) continue;
-        const nestedXml = await nestedResponse.text();
-        for (const u of extractSitemapUrls(nestedXml)) {
-          if (PRIORITY_PATH_PATTERNS.some((p) => p.test(u))) {
-            candidates.push({ url: u, type: "sitemap" });
-          }
-        }
-      } catch {
-        // Skip unreachable nested sitemap.
-      }
-    }
-  } catch {
-    // Sitemap unreachable — return whatever we have (likely nothing); the
-    // audit still proceeds with policies alone.
+  collect(
+    await walkSitemap(storeUrl, {
+      deadline,
+      maxUrls: 400,
+      fetchTimeoutMs: PAGE_FETCH_TIMEOUT_MS,
+      maxNestedSitemaps: 5,
+    }),
+  );
+
+  // No sitemap, or one that indexes only products: fall back to the
+  // storefront's own navigation, which is all a hand-rolled headless build
+  // may expose.
+  if (candidates.length === 0) {
+    collect(
+      await crawlHomepageLinks(storeUrl, {
+        deadline,
+        maxUrls: 200,
+        fetchTimeoutMs: PAGE_FETCH_TIMEOUT_MS,
+      }),
+    );
   }
+
   return candidates.slice(0, MAX_CANDIDATE_PAGES);
 }
 
@@ -209,16 +213,16 @@ export async function runStoreAudit(shop: string, admin: AdminGraphqlClient) {
   const deadline = Date.now() + TOTAL_CRAWL_BUDGET_MS;
 
   try {
-    const [policies, primaryDomain] = await Promise.all([
+    const [policies, storefront] = await Promise.all([
       fetchStorePolicies(admin),
-      fetchPrimaryDomain(admin),
+      resolveStorefront(shop, admin),
     ]);
 
-    const storeUrl = primaryDomain
-      ? primaryDomain.replace(/\/$/, "")
-      : `https://${shop}`;
-
-    const candidates = await discoverCandidateUrls(storeUrl, deadline);
+    const candidates = await discoverCandidateUrls(
+      storefront.url,
+      storefront.platform,
+      deadline,
+    );
     const pages = await crawlPages(candidates, deadline);
     const storeContext = await summarizeStoreContext(shop, policies, pages);
 

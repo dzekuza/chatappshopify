@@ -197,6 +197,12 @@ model CatalogSync {
   status       String    @default("pending")
   productCount Int       @default(0)
   pageCount    Int       @default(0)
+  // The storefront the last sync actually crawled, and how it's built:
+  // "online-store" (Liquid theme), "headless" (Hydrogen/Oxygen or a custom
+  // framework) or "unknown". Detected empirically — the Admin API exposes no
+  // headless flag — see storefront.server.ts.
+  storeUrl     String?
+  platform     String    @default("unknown")
   lastRunAt    DateTime?
   lastError    String?
   createdAt    DateTime  @default(now())

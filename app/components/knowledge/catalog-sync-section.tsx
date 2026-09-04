@@ -2,6 +2,8 @@ export type CatalogSyncInfo = {
   status: string;
   productCount: number;
   pageCount: number;
+  storeUrl: string | null;
+  platform: string;
   lastRunAt: string | Date | null;
   lastError: string | null;
 } | null;
@@ -89,6 +91,15 @@ export function CatalogSyncSection({
             {catalogSync.pageCount} page
             {catalogSync.pageCount === 1 ? "" : "s"} indexed
             {lastRun ? ` — last synced ${lastRun}` : ""}.
+          </s-paragraph>
+        ) : null}
+
+        {catalogSync?.storeUrl ? (
+          <s-paragraph tone="neutral" color="subdued">
+            {catalogSync.platform === "headless"
+              ? "Headless storefront (Hydrogen/Oxygen) detected"
+              : "Online Store storefront"}{" "}
+            &mdash; pages indexed from {catalogSync.storeUrl}.
           </s-paragraph>
         ) : null}
 

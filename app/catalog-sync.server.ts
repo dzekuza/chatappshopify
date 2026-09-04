@@ -1,4 +1,10 @@
 import prisma from "./db.server";
+import {
+  crawlHomepageLinks,
+  resolveStorefront,
+  walkSitemap,
+  type StorefrontPlatform,
+} from "./storefront.server";
 
 // Syncs the catalog's *shape* (CatalogProduct) and the store's linkable URLs
 // (StorePage) so the assistant knows what the store actually contains without
@@ -13,6 +19,12 @@ import prisma from "./db.server";
 // Page URLs come from the public sitemap rather than the Admin pages API,
 // which needs the read_content scope this app doesn't request (adding a scope
 // forces every existing merchant to re-authorise).
+//
+// The storefront is not assumed to be a Liquid Online Store. For a headless
+// build (Hydrogen on Oxygen, or a custom framework) `onlineStoreUrl` is null
+// on every product and content routes are whatever the developer chose, so
+// URL discovery falls back to permissive classification and, when there's no
+// usable sitemap, to the homepage's own navigation. See storefront.server.ts.
 
 const PRODUCT_PAGE_SIZE = 100;
 const MAX_PRODUCTS = 2000;
@@ -104,47 +116,37 @@ async function fetchAllProducts(
   return { products: products.slice(0, MAX_PRODUCTS), complete };
 }
 
-async function fetchPrimaryDomain(
-  admin: AdminGraphqlClient,
-): Promise<string | null> {
+// `relaxed` is used for headless storefronts, where a content page is just as
+// likely to live at /about or /en-us/faq as at /pages/about. Keeping only the
+// four Liquid prefixes there would index nothing, which defeats the point of
+// the page list — so anything that isn't a product page or an asset counts.
+function classifyUrl(
+  url: string,
+  relaxed: boolean,
+): "page" | "collection" | "policy" | null {
+  if (/\/products\//i.test(url)) {
+    // /collections/<handle>/products/<handle> is a product URL wearing a
+    // collection prefix — those are covered by CatalogProduct already.
+    return null;
+  }
+  if (/\/policies\//i.test(url)) return "policy";
+  if (/\/collections\//i.test(url)) return "collection";
+  if (/\/pages\//i.test(url)) return "page";
+  if (/\/blogs\//i.test(url)) return "page";
+
+  if (!relaxed) return null;
   try {
-    const response = await admin.graphql(
-      `#graphql
-        query ShopUrl { shop { primaryDomain { url } } }`,
-    );
-    const json = await response.json();
-    return json?.data?.shop?.primaryDomain?.url ?? null;
+    const path = new URL(url).pathname.replace(/\/$/, "");
+    if (!path || NON_PAGE_EXTENSION.test(path)) return null;
+    if (/\/(cart|account|checkout|search)(\/|$)/i.test(path)) return null;
+    return "page";
   } catch {
     return null;
   }
 }
 
-async function fetchWithTimeout(url: string, timeoutMs: number) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { signal: controller.signal });
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-function extractSitemapUrls(xml: string): string[] {
-  const matches = xml.match(/<loc>([^<]+)<\/loc>/gi) ?? [];
-  return matches.map((m) => m.replace(/<\/?loc>/gi, "").trim()).filter(Boolean);
-}
-
-function classifyUrl(url: string): "page" | "collection" | "policy" | null {
-  if (/\/policies\//i.test(url)) return "policy";
-  if (/\/collections\//i.test(url)) {
-    // /collections/<handle>/products/<handle> is a product URL wearing a
-    // collection prefix — those are covered by CatalogProduct already.
-    return /\/products\//i.test(url) ? null : "collection";
-  }
-  if (/\/pages\//i.test(url)) return "page";
-  if (/\/blogs\//i.test(url)) return "page";
-  return null;
-}
+const NON_PAGE_EXTENSION =
+  /\.(xml|json|jpe?g|png|gif|webp|avif|svg|ico|css|js|mjs|pdf|txt|zip|mp4|webm)$/i;
 
 function titleFromUrl(url: string): string {
   const slug = url.split("?")[0].replace(/\/$/, "").split("/").pop() ?? "";
@@ -155,51 +157,45 @@ function titleFromUrl(url: string): string {
     .trim();
 }
 
-// Walks sitemap.xml plus its nested sitemaps, keeping only the content,
-// collection and policy URLs a shopper could usefully be linked to.
+// Builds the store's page index: sitemap first, and — when that yields
+// nothing usable, as on a hand-rolled headless storefront — the homepage's
+// own navigation links.
 async function discoverStoreUrls(
   storeUrl: string,
+  platform: StorefrontPlatform,
   deadline: number,
 ): Promise<{ url: string; title: string; type: string }[]> {
+  // Only the Liquid Online Store guarantees the /pages//collections/ layout;
+  // "unknown" gets the permissive rules too, since guessing wrong there costs
+  // a few junk URLs whereas guessing wrong the other way costs the whole index.
+  const relaxed = platform !== "online-store";
   const found = new Map<string, { url: string; title: string; type: string }>();
 
   const collect = (urls: string[]) => {
     for (const url of urls) {
       if (found.size >= MAX_PAGES) return;
-      const type = classifyUrl(url);
+      const type = classifyUrl(url, relaxed);
       if (!type || found.has(url)) continue;
       found.set(url, { url, title: titleFromUrl(url), type });
     }
   };
 
-  try {
-    const response = await fetchWithTimeout(
-      `${storeUrl}/sitemap.xml`,
-      FETCH_TIMEOUT_MS,
+  collect(
+    await walkSitemap(storeUrl, {
+      deadline,
+      maxUrls: MAX_PAGES * 4,
+      fetchTimeoutMs: FETCH_TIMEOUT_MS,
+    }),
+  );
+
+  if (found.size === 0) {
+    collect(
+      await crawlHomepageLinks(storeUrl, {
+        deadline,
+        maxUrls: MAX_PAGES * 2,
+        fetchTimeoutMs: FETCH_TIMEOUT_MS,
+      }),
     );
-    if (!response.ok) return [];
-    const topLevel = extractSitemapUrls(await response.text());
-
-    collect(topLevel.filter((u) => !/sitemap.*\.xml$/i.test(u)));
-
-    const nested = topLevel.filter((u) => /sitemap.*\.xml$/i.test(u));
-    for (const sitemapUrl of nested) {
-      if (Date.now() > deadline || found.size >= MAX_PAGES) break;
-      // Product sitemaps are large and redundant with CatalogProduct.
-      if (/sitemap_products/i.test(sitemapUrl)) continue;
-      try {
-        const nestedResponse = await fetchWithTimeout(
-          sitemapUrl,
-          FETCH_TIMEOUT_MS,
-        );
-        if (!nestedResponse.ok) continue;
-        collect(extractSitemapUrls(await nestedResponse.text()));
-      } catch {
-        // Skip unreachable nested sitemap — a partial index still helps.
-      }
-    }
-  } catch {
-    return [];
   }
 
   return [...found.values()];
@@ -215,13 +211,13 @@ export async function syncCatalog(shop: string, admin: AdminGraphqlClient) {
   const deadline = Date.now() + TOTAL_BUDGET_MS;
 
   try {
-    const [{ products, complete }, primaryDomain] = await Promise.all([
+    const [{ products, complete }, storefront] = await Promise.all([
       fetchAllProducts(admin, deadline),
-      fetchPrimaryDomain(admin),
+      resolveStorefront(shop, admin),
     ]);
 
-    const storeUrl = (primaryDomain ?? `https://${shop}`).replace(/\/$/, "");
-    const pages = await discoverStoreUrls(storeUrl, deadline);
+    const storeUrl = storefront.url;
+    const pages = await discoverStoreUrls(storeUrl, storefront.platform, deadline);
 
     const productRows = products.map((product) => ({
       shop,
@@ -270,6 +266,8 @@ export async function syncCatalog(shop: string, admin: AdminGraphqlClient) {
         status: complete ? "ready" : "partial",
         productCount: productRows.length,
         pageCount: pages.length,
+        storeUrl,
+        platform: storefront.platform,
         lastRunAt: new Date(),
         lastError: complete
           ? null
@@ -277,7 +275,11 @@ export async function syncCatalog(shop: string, admin: AdminGraphqlClient) {
       },
     });
 
-    return { productCount: productRows.length, pageCount: pages.length };
+    return {
+      productCount: productRows.length,
+      pageCount: pages.length,
+      platform: storefront.platform,
+    };
   } catch (error) {
     await prisma.catalogSync.update({
       where: { shop },

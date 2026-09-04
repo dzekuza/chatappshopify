@@ -29,6 +29,7 @@ import {
 import {
   catalogOverviewPrompt,
   storePagesPrompt,
+  storefrontPrompt,
 } from "../catalog-context.server";
 
 const MAX_MESSAGES = 20;
@@ -416,7 +417,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   // The synced catalogue snapshot and page index (see catalog-sync.server.ts).
   // Both are orientation only — the snapshot deliberately holds no inventory,
   // so availability still comes from the live searchProducts call below.
-  const [catalogProducts, storePages] = await Promise.all([
+  const [catalogProducts, catalogSync, storePages] = await Promise.all([
     prisma.catalogProduct.findMany({
       where: { shop: session.shop },
       select: {
@@ -428,6 +429,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         currency: true,
         collectionTitles: true,
       },
+    }),
+    prisma.catalogSync.findUnique({
+      where: { shop: session.shop },
+      select: { storeUrl: true, platform: true },
     }),
     prisma.storePage.findMany({
       where: { shop: session.shop },
@@ -476,6 +481,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       knowledgeBasePrompt(knowledgeEntries),
       catalogOverviewPrompt(catalogProducts),
       storePagesPrompt(storePages),
+      storefrontPrompt(catalogSync?.storeUrl ?? null, catalogSync?.platform ?? null),
       STOCK_TOOL_INSTRUCTION,
       ORDER_TOOL_INSTRUCTION,
       PERSONALIZATION_TOOL_INSTRUCTION,

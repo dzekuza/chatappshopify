@@ -85,6 +85,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           status: true,
           productCount: true,
           pageCount: true,
+          storeUrl: true,
+          platform: true,
           lastRunAt: true,
           lastError: true,
         },
@@ -203,6 +205,8 @@ export default function Knowledge() {
       status: string;
       productCount: number;
       pageCount: number;
+      storeUrl: string | null;
+      platform: string;
       lastRunAt: string | Date | null;
       lastError: string | null;
     } | null;

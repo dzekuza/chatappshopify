@@ -101,3 +101,25 @@ export function storePagesPrompt(pages: Pick<StorePage, "url" | "title" | "type"
 
   return `These are this store's pages and collection URLs. When a shopper needs one of them, link them to the exact URL below — never invent a URL or guess a path that isn't listed here:\n\n${lines.join("\n")}${more > 0 ? `\n(and ${more} more)` : ""}`;
 }
+
+// Tells the assistant where the storefront actually lives. It matters most on
+// a headless (Hydrogen/Oxygen) store: `Product.onlineStoreUrl` is null there,
+// so the product links the search tool returns are relative paths, and the
+// assistant needs the base to turn one into something a shopper can click.
+export function storefrontPrompt(
+  storeUrl: string | null,
+  platform: string | null,
+) {
+  if (!storeUrl) return "";
+
+  const headless = platform === "headless";
+  return [
+    `This store's storefront is at ${storeUrl}.`,
+    headless
+      ? "It is a headless (Hydrogen/Oxygen) storefront rather than a Liquid theme, so its page paths are custom — never assume a Shopify default path like /pages/faq exists. Only link to URLs listed above."
+      : "",
+    `When a product or page link you were given is a relative path (starting with "/"), prefix it with ${storeUrl} before showing it to the shopper.`,
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
