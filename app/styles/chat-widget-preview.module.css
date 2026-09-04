@@ -56,7 +56,7 @@
   right: 0;
   width: 360px;
   max-width: calc(100vw - 32px);
-  height: 500px;
+  height: 560px;
   max-height: calc(100vh - 120px);
   background: #fafafa;
   border-radius: var(--aicw-preview-radius, 20px);
@@ -428,4 +428,151 @@
     transform: translateY(-4px);
     opacity: 1;
   }
+}
+
+/* ---------------------------------------------------------------------------
+   Storefront parity (extensions/ai-chat-widget/assets/ai-chat-widget.css).
+   These two files share no code by design — the storefront widget is a
+   vanilla IIFE with no build step — so every value below is copied from its
+   .aicw-* counterpart by hand and has to be kept in step by hand.
+   --------------------------------------------------------------------------- */
+
+/* .aicw-panel.aicw-show-gate — the gate has far less content than a live
+   conversation, so the panel hugs it instead of stretching to the fixed chat
+   height. It anchors via `bottom`, so shrinking still grows upward. */
+.previewPanelGated {
+  height: auto;
+}
+
+/* .aicw-gate */
+.previewGate {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.previewGateIntro {
+  margin: 0 0 4px;
+  font-size: 13px;
+  color: #555;
+}
+
+.previewField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: #333;
+}
+
+.previewField input {
+  border: 1px solid #ddd;
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 14px;
+  font-family: inherit;
+}
+
+/* Mirrors the storefront's override: these already read as bordered fields,
+   so focus darkens the border rather than drawing a detached ring. */
+.previewField input:focus-visible {
+  outline: none;
+  border-color: var(--aicw-preview-color, #1a1a1a);
+  box-shadow: none;
+}
+
+.previewGateError {
+  margin: 0;
+  font-size: 12px;
+  color: #c0392b;
+}
+
+.previewGateSubmit {
+  background: var(--aicw-preview-color, #1a1a1a);
+  color: var(--aicw-preview-color-contrast, #ffffff);
+  border: none;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+/* .aicw-scroll-bottom — absolutely positioned inside the scrolling body. */
+.previewScrollBottom {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: #fff;
+  color: #111;
+  border: 1px solid #ddd;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 1;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.previewScrollBottom svg {
+  width: 16px;
+  height: 16px;
+}
+
+.previewScrollBottomHidden {
+  opacity: 0;
+  transform: translateY(4px);
+  pointer-events: none;
+}
+
+/* .aicw-message-agent — a human reply from the merchant, visually distinct
+   from both the shopper's pill and the assistant's plain text. */
+.previewMessageAgent {
+  align-self: flex-start;
+  background: #eef2ff;
+  color: #1e1b4b;
+}
+
+/* .aicw-attachment-preview */
+.previewAttachmentPreview {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px 0;
+}
+
+.previewAttachmentThumb {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.previewAttachmentError {
+  font-size: 12px;
+  color: #c0392b;
+}
+
+.previewAttachmentRemove {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: #fff;
+  color: #374151;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.previewAttachmentRemove svg {
+  width: 12px;
+  height: 12px;
 }

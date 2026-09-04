@@ -1,4 +1,10 @@
-import { useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import styles from "../../styles/chat-widget-preview.module.css";
 import type { KnowledgeCollection } from "./knowledge-sync-section";
 import { ProductCardRow, type ChatProduct } from "./product-card";
@@ -6,7 +12,10 @@ import { TimestampedVideo } from "../timestamped-video";
 import { parseChatMarkdown, type InlineSegment } from "../../chat-markdown";
 
 type PreviewMessage = {
-  role: "user" | "assistant";
+  // "agent" is a human reply the merchant sent from the Activity page. The
+  // preview never produces one, but it renders them so the merchant sees the
+  // style a shopper would — same as the storefront widget.
+  role: "user" | "assistant" | "agent";
   content: string;
   products?: ChatProduct[];
 };
@@ -90,6 +99,20 @@ function BubbleIcon({ iconUrl }: { iconUrl?: string | null }) {
         d="M4 4h16v12H7l-3 3V4z"
         stroke="currentColor"
         strokeWidth="2"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function ArrowDownIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" width="16" height="16" aria-hidden="true">
+      <path
+        d="M12 5v14M19 12l-7 7-7-7"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
         strokeLinejoin="round"
       />
     </svg>
@@ -273,20 +296,110 @@ export function ChatPreview({
   const [isPreviewSending, setIsPreviewSending] = useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
 
+  // Contact gate — the storefront blocks a conversation until the shopper
+  // gives a name plus one of email/phone (see apps.chat-widget.chat.tsx,
+  // which enforces the same rule server-side). The preview gates too so the
+  // merchant sees the first thing a shopper actually meets; `contact` being
+  // set is what marks the gate passed.
+  const [contact, setContact] = useState<{
+    name: string;
+    email: string;
+    phone: string;
+  } | null>(null);
+  const [gateName, setGateName] = useState("");
+  const [gateEmail, setGateEmail] = useState("");
+  const [gatePhone, setGatePhone] = useState("");
+  const [gateError, setGateError] = useState<string | null>(null);
+
+  const [attachmentUrl, setAttachmentUrl] = useState<string | null>(null);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [isFollowingBottom, setIsFollowingBottom] = useState(true);
+
+  // Mirrors the storefront's scroll handling: stick to the bottom while the
+  // reader is already there, but never yank them back down mid-scroll.
+  useEffect(() => {
+    const body = bodyRef.current;
+    if (body && isFollowingBottom) body.scrollTop = body.scrollHeight;
+  }, [previewMessages, isFollowingBottom]);
+
+  const handleBodyScroll = () => {
+    const body = bodyRef.current;
+    if (!body) return;
+    const distance = body.scrollHeight - body.scrollTop - body.clientHeight;
+    setIsFollowingBottom(distance < 40);
+  };
+
+  const scrollToBottom = () => {
+    const body = bodyRef.current;
+    if (!body) return;
+    body.scrollTo({ top: body.scrollHeight, behavior: "smooth" });
+    setIsFollowingBottom(true);
+  };
+
+  const submitGate = () => {
+    const name = gateName.trim();
+    if (!name) {
+      setGateError("Please tell us your name.");
+      return;
+    }
+    if (!gateEmail.trim() && !gatePhone.trim()) {
+      setGateError("Please add an email or a phone number.");
+      return;
+    }
+    setGateError(null);
+    setContact({ name, email: gateEmail.trim(), phone: gatePhone.trim() });
+  };
+
+  const uploadAttachment = async (file: File) => {
+    setAttachmentError(null);
+    setIsUploading(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const response = await fetch("/app/chat-widget/attachment-upload", {
+        method: "POST",
+        body: form,
+      });
+      const data = (await response.json()) as { url?: string; error?: string };
+      if (!response.ok || !data.url) {
+        setAttachmentError(data.error || "Upload failed.");
+        return;
+      }
+      setAttachmentUrl(data.url);
+    } catch {
+      setAttachmentError("Upload failed.");
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   const resetPreview = () => {
     setPreviewMessages([]);
+    setAttachmentUrl(null);
+    setAttachmentError(null);
   };
 
   const sendPreviewMessage = async () => {
     const text = previewInput.trim();
-    if (!text || isPreviewSending) return;
+    if ((!text && !attachmentUrl) || isPreviewSending) return;
+
+    // The image rides along as a bare URL inside the message text — the same
+    // convention the storefront uses, which both chat backends detect with
+    // ATTACHMENT_IMAGE_URL_REGEX and convert to multimodal content.
+    const content = attachmentUrl ? `${text}\n${attachmentUrl}`.trim() : text;
 
     const nextHistory: PreviewMessage[] = [
       ...previewMessages,
-      { role: "user", content: text },
+      { role: "user", content },
     ];
     setPreviewMessages(nextHistory);
     setPreviewInput("");
+    setAttachmentUrl(null);
+    setAttachmentError(null);
     setIsPreviewSending(true);
     setPreviewMessages((prev) => [...prev, { role: "assistant", content: "" }]);
 
@@ -365,11 +478,13 @@ export function ChatPreview({
       }
     >
       <div
-        className={
-          isPreviewOpen
-            ? `${styles.previewPanel} ${styles.previewPanelOpen}`
-            : styles.previewPanel
-        }
+        className={[
+          styles.previewPanel,
+          isPreviewOpen ? styles.previewPanelOpen : "",
+          contact ? "" : styles.previewPanelGated,
+        ]
+          .filter(Boolean)
+          .join(" ")}
       >
         <div className={styles.previewHeader}>
           <div>
@@ -404,7 +519,59 @@ export function ChatPreview({
               </div>
             </div>
 
-            <div className={styles.previewBody}>
+            {!contact ? (
+              <form
+                className={styles.previewGate}
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  submitGate();
+                }}
+              >
+                <p className={styles.previewGateIntro}>
+                  Tell us a bit about you to start chatting.
+                </p>
+                <label className={styles.previewField}>
+                  <span>Name</span>
+                  <input
+                    type="text"
+                    autoComplete="name"
+                    value={gateName}
+                    onChange={(e) => setGateName(e.currentTarget.value)}
+                    required
+                  />
+                </label>
+                <label className={styles.previewField}>
+                  <span>Email</span>
+                  <input
+                    type="email"
+                    autoComplete="email"
+                    value={gateEmail}
+                    onChange={(e) => setGateEmail(e.currentTarget.value)}
+                  />
+                </label>
+                <label className={styles.previewField}>
+                  <span>Phone</span>
+                  <input
+                    type="tel"
+                    autoComplete="tel"
+                    value={gatePhone}
+                    onChange={(e) => setGatePhone(e.currentTarget.value)}
+                  />
+                </label>
+                {gateError ? (
+                  <p className={styles.previewGateError}>{gateError}</p>
+                ) : null}
+                <button type="submit" className={styles.previewGateSubmit}>
+                  Start chat
+                </button>
+              </form>
+            ) : (
+            <>
+            <div
+              className={styles.previewBody}
+              ref={bodyRef}
+              onScroll={handleBodyScroll}
+            >
               {previewMessages.length === 0 ? (
                 <div className={styles.previewEmptyState}>
                   <div className={styles.previewEmptyIcon}>
@@ -423,11 +590,14 @@ export function ChatPreview({
                     const nodes = [
                       <div
                         key={`msg-${index}`}
-                        className={
+                        className={[
+                          styles.previewMessage,
                           message.role === "user"
-                            ? `${styles.previewMessage} ${styles.previewMessageUser}`
-                            : `${styles.previewMessage} ${styles.previewMessageAssistant}`
-                        }
+                            ? styles.previewMessageUser
+                            : message.role === "agent"
+                              ? styles.previewMessageAgent
+                              : styles.previewMessageAssistant,
+                        ].join(" ")}
                       >
                         {message.content
                           ? renderMessageBody(message.content)
@@ -453,7 +623,50 @@ export function ChatPreview({
                   })}
                 </div>
               )}
+
+              <button
+                type="button"
+                className={[
+                  styles.previewScrollBottom,
+                  isFollowingBottom ? styles.previewScrollBottomHidden : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                onClick={scrollToBottom}
+                aria-label="Scroll to latest messages"
+                aria-hidden={isFollowingBottom}
+              >
+                <ArrowDownIcon />
+              </button>
             </div>
+
+            {attachmentUrl || attachmentError ? (
+              <div className={styles.previewAttachmentPreview}>
+                {attachmentUrl ? (
+                  <img
+                    className={styles.previewAttachmentThumb}
+                    src={attachmentUrl}
+                    alt=""
+                  />
+                ) : null}
+                {attachmentError ? (
+                  <span className={styles.previewAttachmentError}>
+                    {attachmentError}
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  className={styles.previewAttachmentRemove}
+                  onClick={() => {
+                    setAttachmentUrl(null);
+                    setAttachmentError(null);
+                  }}
+                  aria-label="Remove attachment"
+                >
+                  <CloseIcon />
+                </button>
+              </div>
+            ) : null}
 
             <form
               className={styles.previewInputArea}
@@ -462,12 +675,24 @@ export function ChatPreview({
                 sendPreviewMessage();
               }}
             >
+              <input
+                type="file"
+                accept="image/*"
+                hidden
+                ref={fileInputRef}
+                onChange={(event) => {
+                  const file = event.currentTarget.files?.[0];
+                  if (file) uploadAttachment(file);
+                  event.currentTarget.value = "";
+                }}
+              />
               <button
                 type="button"
                 className={styles.previewIconButton}
-                disabled
-                aria-label="Attachments not available in preview"
-                title="Attachments not available in preview"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isPreviewSending || isUploading}
+                aria-label="Attach an image"
+                title="Attach an image"
               >
                 <PlusIcon />
               </button>
@@ -488,12 +713,18 @@ export function ChatPreview({
               <button
                 type="submit"
                 className={styles.previewSendButton}
-                disabled={isPreviewSending || !previewInput.trim()}
+                disabled={
+                  isPreviewSending ||
+                  isUploading ||
+                  (!previewInput.trim() && !attachmentUrl)
+                }
                 aria-label="Send message"
               >
                 <ArrowUpIcon />
               </button>
             </form>
+            </>
+            )}
           </div>
 
           <button
