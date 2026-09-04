@@ -2,6 +2,7 @@ import { generateObject } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { z } from "zod";
 import prisma from "./db.server";
+import { FREE_TIER_DEFAULT_MODEL } from "./gemini-model.server";
 
 // Reads back what shoppers actually asked the assistant and proposes
 // knowledge entries the merchant hasn't written yet. Deliberately not
@@ -125,7 +126,7 @@ export async function generateKnowledgeSuggestions(
   try {
     const google = createGoogleGenerativeAI({ apiKey });
     const { object } = await generateObject({
-      model: google("gemini-2.5-flash"),
+      model: google(FREE_TIER_DEFAULT_MODEL),
       schema: suggestionSchema,
       prompt: [
         `You are helping the merchant of the Shopify store "${shop}" grow the ` +

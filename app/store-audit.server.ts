@@ -1,6 +1,7 @@
 import { generateText } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import prisma from "./db.server";
+import { FREE_TIER_DEFAULT_MODEL } from "./gemini-model.server";
 import {
   crawlHomepageLinks,
   fetchWithTimeout,
@@ -188,7 +189,7 @@ async function summarizeStoreContext(
   try {
     const google = createGoogleGenerativeAI({ apiKey });
     const { text } = await generateText({
-      model: google("gemini-2.5-flash"),
+      model: google(FREE_TIER_DEFAULT_MODEL),
       prompt:
         `Given the following crawled content and policies from the Shopify store "${shop}", ` +
         "produce a concise store-context brief for a shopping-assistant AI. Cover: what kind " +

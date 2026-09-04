@@ -14,6 +14,7 @@ import { AppearanceSection } from "../components/settings/appearance-section";
 import { AiModelSection } from "../components/settings/ai-model-section";
 import type { KnowledgeCollection } from "../components/settings/knowledge-sync-section";
 import type { WidgetSettings } from "@prisma/client";
+import { FREE_TIER_DEFAULT_MODEL } from "../gemini-model.server";
 
 const LANGUAGE_VALUES = [
   "auto",
@@ -83,7 +84,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     String(payload.headerTitle ?? "").trim() || "Chat with us";
   const cornerStyle =
     payload.cornerStyle === "square" ? "square" : "rounded";
-  const geminiModel = String(payload.geminiModel ?? "gemini-2.5-flash");
+  const geminiModel = String(payload.geminiModel ?? FREE_TIER_DEFAULT_MODEL);
   // Bring-your-own API key is a Pro plan feature — silently ignore it for
   // other plans rather than trusting the client-side gate.
   const geminiApiKey = isProPlan

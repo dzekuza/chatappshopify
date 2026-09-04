@@ -1107,6 +1107,14 @@
           // 402 is the store's monthly conversation limit — the body carries a
           // shopper-facing sentence worth showing instead of the generic error.
           var fallback = "Sorry, something went wrong. Please try again.";
+          // 503 means the AI backend itself is unavailable (no key configured,
+          // or one that Google is refusing). "Please try again" would be a lie
+          // — retrying can't fix it — so point the shopper at a human instead.
+          // Mirrors AI_UNAVAILABLE_MESSAGE in app/ai-status.server.ts, which
+          // covers the same failure once it happens mid-stream.
+          var unavailable =
+            "Sorry — the assistant is temporarily unavailable right now. " +
+            "Please contact the store directly and someone will help you.";
           if (response.status === 402) {
             try {
               var limitText = await response.text();
@@ -1114,6 +1122,8 @@
             } catch (readErr) {
               assistantEl.textContent = fallback;
             }
+          } else if (response.status === 503) {
+            assistantEl.textContent = unavailable;
           } else {
             assistantEl.textContent = fallback;
           }

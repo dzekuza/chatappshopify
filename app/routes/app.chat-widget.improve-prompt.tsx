@@ -3,7 +3,10 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { generateText } from "ai";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import { resolveGeminiModel } from "../gemini-model.server";
+import {
+  FREE_TIER_DEFAULT_MODEL,
+  resolveGeminiModel,
+} from "../gemini-model.server";
 
 const MAX_PROMPT_CHARS = 8000;
 const MAX_INSTRUCTION_CHARS = 1000;
@@ -51,7 +54,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   const model = resolveGeminiModel(
-    String(body?.geminiModel ?? "gemini-2.5-flash").trim(),
+    String(body?.geminiModel ?? FREE_TIER_DEFAULT_MODEL).trim(),
     Boolean(settings?.geminiApiKey),
   );
 

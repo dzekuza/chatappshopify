@@ -11,8 +11,45 @@ import {
 import {
   countConversationsThisMonth,
   FREE_PLAN_MONTHLY_CONVERSATIONS,
+  hasUnlimitedConversations,
 } from "../billing.server";
 import { PlanCard, type Plan } from "../components/plans/plan-card";
+import { UsageStatus } from "../components/plans/usage-status";
+import { getAiHealth, type AiHealth } from "../ai-status.server";
+import prisma from "../db.server";
+
+// Everything the page needs beyond the plan list. Kept as one shape so the
+// three loader exits below can't drift apart.
+const UNKNOWN_USAGE = {
+  conversationsThisMonth: 0,
+  unlimited: false,
+  usesOwnKey: false,
+  aiHealth: { ok: true, heading: null, detail: null } as Pick<
+    AiHealth,
+    "ok" | "heading" | "detail"
+  >,
+};
+
+async function loadUsage(shop: string) {
+  const [conversationsThisMonth, settings, aiHealth] = await Promise.all([
+    countConversationsThisMonth(shop),
+    prisma.widgetSettings.findUnique({
+      where: { shop },
+      select: { geminiApiKey: true },
+    }),
+    getAiHealth(shop),
+  ]);
+  return {
+    conversationsThisMonth,
+    unlimited: hasUnlimitedConversations(shop),
+    usesOwnKey: Boolean(settings?.geminiApiKey),
+    aiHealth: {
+      ok: aiHealth.ok,
+      heading: aiHealth.heading,
+      detail: aiHealth.detail,
+    },
+  };
+}
 
 // REAUTH_URL_HEADER in @shopify/shopify-app-react-router — the header the
 // library puts the charge confirmation URL on when it answers an XHR.
@@ -55,9 +92,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           return {
             confirmationUrl,
             currentPlan: null,
-            conversationsThisMonth: 0,
             freeLimit: FREE_PLAN_MONTHLY_CONVERSATIONS,
             error: null,
+            ...UNKNOWN_USAGE,
           };
         }
       }
@@ -66,18 +103,18 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   }
 
   try {
-    const [{ appSubscriptions }, conversationsThisMonth] = await Promise.all([
+    const [{ appSubscriptions }, usage] = await Promise.all([
       billing.check({ plans: [SERVER_MONTHLY_PLAN, SERVER_PRO_PLAN] }),
-      countConversationsThisMonth(session.shop),
+      loadUsage(session.shop),
     ]);
     const currentPlan = appSubscriptions[0]?.name ?? null;
 
     return {
       confirmationUrl: null,
       currentPlan,
-      conversationsThisMonth,
       freeLimit: FREE_PLAN_MONTHLY_CONVERSATIONS,
       error: null,
+      ...usage,
     };
   } catch {
     // Billing/usage lookups are best-effort here — surface a banner rather
@@ -85,9 +122,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     return {
       confirmationUrl: null,
       currentPlan: null,
-      conversationsThisMonth: 0,
       freeLimit: FREE_PLAN_MONTHLY_CONVERSATIONS,
-      error: "Couldn't load your current plan and usage. Some information below may be out of date.",
+      error:
+        "Couldn't load your current plan and usage. Some information below may be out of date.",
+      ...UNKNOWN_USAGE,
     };
   }
 };
@@ -146,8 +184,16 @@ const PAID_PLANS = [
 const FREE_PLAN_DETAILS = PLANS.find((p) => p.name === FREE_PLAN)!;
 
 export default function Plans() {
-  const { confirmationUrl, currentPlan, conversationsThisMonth, freeLimit, error } =
-    useLoaderData<typeof loader>();
+  const {
+    confirmationUrl,
+    currentPlan,
+    conversationsThisMonth,
+    freeLimit,
+    unlimited,
+    usesOwnKey,
+    aiHealth,
+    error,
+  } = useLoaderData<typeof loader>();
   // No active subscription means the shop is on Free — there is no $0
   // subscription to read back from Shopify.
   const activePlan = currentPlan ?? FREE_PLAN;
@@ -182,16 +228,26 @@ export default function Plans() {
           <s-paragraph>{error}</s-paragraph>
         </s-banner>
       ) : null}
+
+      {/* The whole reason this page reports AI health: an exhausted or
+          rejected Gemini key used to fail silently, and a merchant had no way
+          to tell it apart from the app being broken. */}
+      {!aiHealth.ok && aiHealth.heading ? (
+        <s-banner tone="critical" heading={aiHealth.heading}>
+          <s-paragraph>{aiHealth.detail}</s-paragraph>
+        </s-banner>
+      ) : null}
+
+      <UsageStatus
+        isFreePlan={activePlan === FREE_PLAN && !unlimited}
+        conversationsThisMonth={conversationsThisMonth}
+        freeLimit={freeLimit}
+        usesOwnKey={usesOwnKey}
+        aiOk={aiHealth.ok}
+      />
+
       <s-section heading="Pick the plan that fits your store">
         <s-stack direction="block" gap="base">
-          {activePlan === FREE_PLAN ? (
-            <s-paragraph>
-              You&rsquo;re on the Free plan — {conversationsThisMonth} of{" "}
-              {freeLimit} conversations used this month. New conversations pause
-              once you reach the limit; conversations already under way keep
-              going.
-            </s-paragraph>
-          ) : null}
           <s-grid
             gridTemplateColumns="@container (inline-size <= 640px) 1fr, repeat(2, 1fr)"
             gap="base"

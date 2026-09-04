@@ -9,7 +9,15 @@ import {
   storeContextPrompt,
 } from "../chat-guardrails.server";
 import { textStreamWithProductCards } from "../product-card-stream.server";
-import { resolveGeminiModel } from "../gemini-model.server";
+import {
+  FREE_TIER_DEFAULT_MODEL,
+  resolveGeminiModel,
+} from "../gemini-model.server";
+import {
+  AI_UNAVAILABLE_MESSAGE,
+  recordAiFailure,
+  recordAiSuccess,
+} from "../ai-status.server";
 import {
   MAX_PRODUCT_DESCRIPTION_CHARS,
   STOCK_TOOL_INSTRUCTION,
@@ -231,8 +239,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   const systemPrompt = String(body?.systemPrompt ?? "").trim();
   const requestedGeminiModel = String(
-    body?.geminiModel ?? "gemini-2.5-flash",
+    body?.geminiModel ?? FREE_TIER_DEFAULT_MODEL,
   ).trim();
+  const usesOwnKey = Boolean(shopSettings?.geminiApiKey);
   const geminiModel = resolveGeminiModel(
     requestedGeminiModel,
     Boolean(shopSettings?.geminiApiKey),
@@ -298,6 +307,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       .join("\n\n"),
     messages,
     stopWhen: stepCountIs(4),
+    // The preview is where a merchant goes to ask "why isn't my assistant
+    // working?", so its result feeds the same health flag the Plans page
+    // reads — a successful test here clears a stale failure.
+    onError: ({ error }) => {
+      recordAiFailure(session.shop, error, usesOwnKey).catch(() => {});
+    },
+    onFinish: () => {
+      recordAiSuccess(session.shop).catch(() => {});
+    },
     tools: {
       searchProducts: tool({
         description:
@@ -519,5 +537,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     },
   });
 
-  return textStreamWithProductCards(result, () => lastProductResults);
+  return textStreamWithProductCards(
+    result,
+    () => lastProductResults,
+    {},
+    async (error) => {
+      await recordAiFailure(session.shop, error, usesOwnKey).catch(() => {});
+      return AI_UNAVAILABLE_MESSAGE;
+    },
+  );
 };

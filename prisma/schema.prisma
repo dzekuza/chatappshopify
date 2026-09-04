@@ -49,7 +49,7 @@ model WidgetSettings {
   position                    String    @default("bottom-right")
   headerTitle                 String    @default("Chat with us")
   cornerStyle                 String    @default("rounded")
-  geminiModel                 String    @default("gemini-2.5-flash")
+  geminiModel                 String    @default("gemini-3.5-flash-lite")
   geminiApiKey                String?
   language                    String    @default("auto")
   knowledgeCollections        Json      @default("[]")
@@ -207,6 +207,30 @@ model CatalogSync {
   lastError    String?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
+
+  @@schema("chat_widget")
+}
+
+// Health of the AI backend for one shop. Exists because a failing Gemini key
+// used to be completely invisible: the model call threw, the stream died, and
+// the shopper saw "Sorry, something went wrong" while the merchant saw
+// nothing at all — indistinguishable from a bug. See gemini-model.server.ts
+// for the production incident that motivated this (shared free-tier key,
+// every request 429 "Quota exceeded").
+//
+// One row per shop, overwritten in place: this is a current-state flag for
+// the Plans page, not an audit log.
+model AiStatus {
+  id              String    @id @default(cuid())
+  shop            String    @unique
+  // "quota" | "auth" | "billing" | "unknown", or null when healthy.
+  lastErrorKind   String?
+  lastErrorAt     DateTime?
+  lastSuccessAt   DateTime?
+  // Whether the failing/succeeding call used the merchant's own Pro-plan key
+  // rather than the app's shared one — it decides who has to fix it.
+  usedOwnKey      Boolean   @default(false)
+  updatedAt       DateTime  @updatedAt
 
   @@schema("chat_widget")
 }

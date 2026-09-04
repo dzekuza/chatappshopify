@@ -9,6 +9,7 @@ import {
   countConversationsThisMonth,
   FREE_PLAN_MONTHLY_CONVERSATIONS,
   hasActiveSubscription,
+  hasUnlimitedConversations,
 } from "../billing.server";
 import {
   FACTUAL_ACCURACY_GUARDRAILS,
@@ -21,6 +22,11 @@ import {
   type NavigateTarget,
 } from "../product-card-stream.server";
 import { resolveGeminiModel } from "../gemini-model.server";
+import {
+  AI_UNAVAILABLE_MESSAGE,
+  recordAiFailure,
+  recordAiSuccess,
+} from "../ai-status.server";
 import {
   MAX_PRODUCT_DESCRIPTION_CHARS,
   STOCK_TOOL_INSTRUCTION,
@@ -341,7 +347,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const conversationsThisMonth = await countConversationsThisMonth(
       session.shop,
     );
-    if (conversationsThisMonth >= FREE_PLAN_MONTHLY_CONVERSATIONS) {
+    if (
+      conversationsThisMonth >= FREE_PLAN_MONTHLY_CONVERSATIONS &&
+      !hasUnlimitedConversations(session.shop)
+    ) {
       const isPaid = await hasActiveSubscription(admin);
       if (!isPaid) {
         return new Response(
@@ -401,6 +410,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const google = createGoogleGenerativeAI({
     apiKey: settings.geminiApiKey || process.env.GEMINI_API_KEY,
   });
+  const usesOwnKey = Boolean(settings.geminiApiKey);
   const geminiModel = resolveGeminiModel(
     settings.geminiModel,
     Boolean(settings.geminiApiKey),
@@ -503,7 +513,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         : m,
     ),
     stopWhen: stepCountIs(4),
+    // A model call that throws is the only signal the merchant ever gets that
+    // their Gemini key is exhausted or invalid, so it's recorded rather than
+    // swallowed — the Plans page reads it back. See ai-status.server.ts.
+    onError: ({ error }) => {
+      recordAiFailure(session.shop, error, usesOwnKey).catch(() => {});
+    },
     onFinish: async ({ text }) => {
+      recordAiSuccess(session.shop).catch(() => {});
       if (text) {
         await prisma.chatMessage.create({
           data: {
@@ -826,5 +843,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     () => lastProductResults,
     () => navigateTarget,
     { "X-Conversation-Id": conversationId },
+    async (error) => {
+      await recordAiFailure(session.shop, error, usesOwnKey).catch(() => {});
+      return AI_UNAVAILABLE_MESSAGE;
+    },
   );
 };

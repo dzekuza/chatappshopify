@@ -1,13 +1,30 @@
 import type { UpdateSettingFn } from "./widget-section";
 
-// gemini-2.5-pro was removed from this list on 2026-08-24 — Google
-// deprecated it for new API users ("This model models/gemini-2.5-pro is no
-// longer available to new users"), which broke every shop that had it
-// selected with a live 404 on every chat request. gemini-3.1-pro-preview is
-// the model Google's own error message points to as the replacement.
+// Every id here was verified against the shared key on 2026-09-04 by actually
+// calling generateContent — Google's listModels still advertises models it
+// will then refuse to run, so listing is not proof.
+//
+// gemini-2.5-pro was dropped on 2026-08-24 and gemini-2.5-flash on
+// 2026-09-04: Google retires models for new API users ("no longer available
+// to new users"), which turns into a live 404 on every chat for any shop
+// still holding the old value. gemini-model.server.ts rewrites those ids at
+// read time so existing rows heal themselves.
+//
+// The Pro option only works on a merchant's *own* key: the shared key is on
+// Google's free tier, which has a zero quota for pro-tier models (429).
 const GEMINI_MODELS = [
-  { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash (fast, low cost)" },
-  { value: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro (higher quality)" },
+  {
+    value: "gemini-3.5-flash-lite",
+    label: "Gemini 3.5 Flash Lite (latest, lowest cost)",
+  },
+  {
+    value: "gemini-3.6-flash",
+    label: "Gemini 3.6 Flash (latest, balanced)",
+  },
+  {
+    value: "gemini-3.1-pro-preview",
+    label: "Gemini 3.1 Pro (highest quality — needs your own API key)",
+  },
 ];
 
 const LANGUAGES = [

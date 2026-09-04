@@ -17,6 +17,28 @@ type AdminGraphqlClient = {
   ) => Promise<Response>;
 };
 
+// Shops that get unlimited conversations without paying — internal dev, demo
+// and partner stores. Shopify's Billing API has no way to comp a shop (there
+// is no $0 subscription, and a test charge still has to be approved and still
+// expires), so this is an explicit allowlist rather than a faked subscription
+// that billing.check would immediately contradict.
+//
+// These are our own stores, and a myshopify domain isn't a secret — it's
+// already public in shopify.app.*.toml — so they're checked in rather than
+// left to an env var alone. UNLIMITED_CONVERSATION_SHOPS extends this list
+// (comma-separated domains) so a store can be comped without a deploy.
+const COMPED_SHOPS = ["ohubudemo.myshopify.com", "checkoutipick.myshopify.com"];
+
+export function hasUnlimitedConversations(shop: string): boolean {
+  const normalized = shop.trim().toLowerCase();
+  if (COMPED_SHOPS.includes(normalized)) return true;
+  return (process.env.UNLIMITED_CONVERSATION_SHOPS ?? "")
+    .split(",")
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean)
+    .includes(normalized);
+}
+
 export function startOfCurrentMonth(now: Date = new Date()): Date {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 }
