@@ -4,6 +4,7 @@
   --aicw-activator-color: var(--aicw-color);
   --aicw-activator-color-contrast: var(--aicw-color-contrast);
   --aicw-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --aicw-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   position: fixed;
   z-index: 2147483000;
   font-family: var(--aicw-font-family);
@@ -121,24 +122,57 @@
   box-shadow:
     0 1px 2px rgba(0, 0, 0, 0.04),
     0 8px 30px rgba(0, 0, 0, 0.2);
-  display: none;
+  display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* Was `display: none` -> `flex`, which cannot transition, so the panel hard-
+     cut into place while the admin preview (chat-widget-preview.module.css)
+     already faded — the merchant's preview was smoother than what shoppers
+     actually got. visibility rather than display keeps it out of the
+     accessibility tree and untabbable while hidden, and unlike display it
+     animates. The delay on visibility holds the panel present for the length
+     of the fade-out, then removes it. */
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: scale(0.96) translateY(8px);
+  /* Grows from the launcher bubble it belongs to, not from nowhere. */
+  transform-origin: bottom right;
+  transition:
+    opacity 150ms var(--aicw-ease-out),
+    transform 150ms var(--aicw-ease-out),
+    visibility 0s linear 150ms;
 }
 
 #ai-chat-widget-root.aicw-h-left .aicw-panel {
   right: auto;
   left: 0;
+  transform-origin: bottom left;
 }
 
+/* The centred panel is positioned *by* a transform, so the entrance scale has
+   to be appended to it — a bare `scale()` here would drop the -50% and shove
+   the panel half a width to the right for the length of the animation. */
 #ai-chat-widget-root.aicw-h-center .aicw-panel {
   right: auto;
   left: 50%;
+  transform: translateX(-50%) scale(0.96) translateY(8px);
+  transform-origin: bottom center;
+}
+
+#ai-chat-widget-root.aicw-h-center.aicw-open .aicw-panel {
   transform: translateX(-50%);
 }
 
 #ai-chat-widget-root.aicw-open .aicw-panel {
-  display: flex;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: none;
+  transition:
+    opacity 220ms var(--aicw-ease-out),
+    transform 220ms var(--aicw-ease-out),
+    visibility 0s;
 }
 
 /* The contact gate has far less content than a live conversation — hug it
@@ -743,6 +777,55 @@
   }
   30% {
     transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+/* Neither this file nor the admin preview honoured prefers-reduced-motion at
+   all. Gentler rather than none: a shopper who asks for reduced motion still
+   needs to see that the panel opened and that the assistant is working, so
+   opacity is kept and only the movement is dropped. */
+@media (prefers-reduced-motion: reduce) {
+  .aicw-panel {
+    transform: none;
+    transition:
+      opacity 100ms linear,
+      visibility 0s linear 100ms;
+  }
+
+  /* Still needs its positioning transform — that's layout, not motion. */
+  #ai-chat-widget-root.aicw-h-center .aicw-panel {
+    transform: translateX(-50%);
+  }
+
+  #ai-chat-widget-root.aicw-open .aicw-panel,
+  #ai-chat-widget-root.aicw-h-center.aicw-open .aicw-panel {
+    transition:
+      opacity 100ms linear,
+      visibility 0s;
+  }
+
+  .aicw-scroll-bottom {
+    transition: opacity 100ms linear;
+  }
+
+  .aicw-scroll-bottom[hidden] {
+    transform: none;
+  }
+
+  /* Held at the keyframes' own resting opacities instead of removed — the
+     dots are the only signal that the assistant is still working, so
+     `animation: none` alone would read as a frozen, broken chat. */
+  .aicw-typing-dot {
+    animation: none;
+    opacity: 0.4;
+  }
+
+  .aicw-typing-dot:nth-child(2) {
+    opacity: 0.7;
+  }
+
+  .aicw-typing-dot:nth-child(3) {
     opacity: 1;
   }
 }
