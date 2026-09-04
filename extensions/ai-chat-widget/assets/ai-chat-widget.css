@@ -618,6 +618,12 @@
   display: block;
   width: 100%;
   aspect-ratio: 3 / 2;
+  /* Inset one step from the card's own corner so the image doesn't read as a
+     square pasted into a rounded tile. Derived from --aicw-radius rather than
+     fixed, because that value is the merchant's corner-style choice — a
+     hardcoded round image would contradict a shop that picked square. max()
+     guards the theme editor's border-radius slider reaching 0. */
+  border-radius: max(0px, calc(var(--aicw-radius, 12px) - 4px));
 }
 
 .aicw-product-image {
