@@ -8,6 +8,7 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { TimestampedVideo } from "../components/timestamped-video";
+import { ChatMessageBody } from "../components/chat-message-body";
 
 function formatTime(date: Date) {
   return new Date(date).toLocaleString(undefined, {
@@ -158,7 +159,7 @@ export default function ActivityThread() {
                       <s-badge tone={roleTone(m.role)}>{roleLabel(m.role)}</s-badge>
                       <s-text color="subdued">{formatTime(m.createdAt)}</s-text>
                     </s-stack>
-                    {text ? <s-paragraph>{text}</s-paragraph> : null}
+                    {text ? <ChatMessageBody text={text} /> : null}
                     {media.map((m2) =>
                       m2.type === "image" ? (
                         <s-box

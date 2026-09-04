@@ -3,6 +3,7 @@ import styles from "../../styles/chat-widget-preview.module.css";
 import type { KnowledgeCollection } from "./knowledge-sync-section";
 import { ProductCardRow, type ChatProduct } from "./product-card";
 import { TimestampedVideo } from "../timestamped-video";
+import { parseChatMarkdown, type InlineSegment } from "../../chat-markdown";
 
 type PreviewMessage = {
   role: "user" | "assistant";
@@ -166,51 +167,34 @@ function extractMedia(text: string): ExtractedMedia | null {
   return null;
 }
 
-// Minimal **bold** support, applied within a single line/paragraph.
-function renderInlineFormatted(text: string): ReactNode[] {
-  const parts = text.split(/(\*\*[^*]+\*\*)/g);
-  return parts.map((part, i) => {
-    if (part.slice(0, 2) === "**" && part.slice(-2) === "**" && part.length > 4) {
-      return <strong key={i}>{part.slice(2, -2)}</strong>;
-    }
-    return part ? <span key={i}>{part}</span> : null;
-  });
+// Renders the assistant's markdown with the storefront widget's own markup
+// (<p>/<ul>/<strong> + CSS Modules), so the preview keeps matching what a
+// shopper sees. Parsing itself lives in chat-markdown.ts, shared with the
+// conversation detail page — which needs Polaris tags for the same AST.
+function renderInlineFormatted(segments: InlineSegment[]): ReactNode[] {
+  return segments.map((segment, i) =>
+    segment.bold ? (
+      <strong key={i}>{segment.text}</strong>
+    ) : (
+      <span key={i}>{segment.text}</span>
+    ),
+  );
 }
 
-// Minimal markdown: paragraphs plus "* "/"- " bullet lists, each line
-// supporting **bold**.
 function renderFormattedBlock(text: string): ReactNode[] {
-  const lines = text.split("\n");
-  const nodes: ReactNode[] = [];
-  let i = 0;
-  let key = 0;
-  while (i < lines.length) {
-    const line = lines[i];
-    if (/^\s*[-*]\s+/.test(line)) {
-      const items: ReactNode[] = [];
-      while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) {
-        items.push(
-          <li key={key++}>{renderInlineFormatted(lines[i].replace(/^\s*[-*]\s+/, ""))}</li>,
-        );
-        i++;
-      }
-      nodes.push(
-        <ul key={key++} className={styles.previewMessageList}>
-          {items}
-        </ul>,
-      );
-    } else if (line.trim() === "") {
-      i++;
-    } else {
-      nodes.push(
-        <p key={key++} className={styles.previewMessageParagraph}>
-          {renderInlineFormatted(line)}
-        </p>,
-      );
-      i++;
-    }
-  }
-  return nodes;
+  return parseChatMarkdown(text).map((block, i) =>
+    block.type === "list" ? (
+      <ul key={i} className={styles.previewMessageList}>
+        {block.items.map((segments, j) => (
+          <li key={j}>{renderInlineFormatted(segments)}</li>
+        ))}
+      </ul>
+    ) : (
+      <p key={i} className={styles.previewMessageParagraph}>
+        {renderInlineFormatted(block.segments)}
+      </p>
+    ),
+  );
 }
 
 function renderMessageBody(content: string) {
