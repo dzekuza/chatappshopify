@@ -6,6 +6,9 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { computeChatStats } from "../lib/chat-stats.server";
 import { runStoreAudit } from "../store-audit.server";
+import { SetupGuide, type SetupStep } from "../components/home/setup-guide";
+import { MetricsCard, type Metric } from "../components/ui/metrics-card";
+import { ConversationsEmptyState } from "../components/ui/conversations-empty-state";
 
 // Kept in sync with the Prisma default in prisma/schema.prisma
 // (WidgetSettings.systemPrompt) — used only to detect whether the merchant
@@ -64,7 +67,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export default function Index() {
   const { addToThemeUrl, stats, steps } = useLoaderData<typeof loader>();
 
-  const setupSteps = [
+  const setupSteps: SetupStep[] = [
     {
       key: "enable",
       label: "Enable the chat widget",
@@ -93,6 +96,7 @@ export default function Index() {
       done: stats.totalChats > 0,
       actionLabel: "Add to theme",
       actionHref: addToThemeUrl,
+      external: true,
     },
     {
       key: "knowledge",
@@ -105,15 +109,46 @@ export default function Index() {
     },
   ];
 
-  const completed = setupSteps.filter((step) => step.done).length;
+  const metrics: Metric[] = [
+    {
+      key: "active",
+      label: "Active sessions",
+      value: String(stats.activeSessions),
+      description: "Chats active in the last 15 minutes",
+      href: "/app/activity",
+      icon: "chat",
+    },
+    {
+      key: "total",
+      label: "Total chats",
+      value: String(stats.totalChats),
+      description: "All-time conversations with shoppers",
+      href: "/app/activity",
+      icon: "order",
+    },
+    {
+      key: "conversion",
+      label: "Conversion rate",
+      value: `${stats.conversionRate}%`,
+      description: "Chat customers who went on to place an order",
+      href: "/app/activity",
+      icon: "cart",
+    },
+  ];
+
   const showThemeBanner = steps.widgetEnabled && !setupSteps[2].done;
 
   return (
     <s-page heading="AI Chat Widget">
-      <s-button slot="primary-action" href="/app/settings" variant="primary">
+      <s-button
+        slot="primary-action"
+        href="/app/settings"
+        variant="primary"
+        icon="settings"
+      >
         Configure widget
       </s-button>
-      <s-button slot="secondary-actions" href="/app/activity">
+      <s-button slot="secondary-actions" href="/app/activity" icon="chat">
         View conversations
       </s-button>
 
@@ -132,120 +167,11 @@ export default function Index() {
         </s-section>
       ) : null}
 
-      <s-section>
-        <s-stack direction="block" gap="base">
-          <s-stack direction="inline" gap="base" alignItems="center">
-            <s-heading>Setup guide</s-heading>
-            <s-badge tone={completed === setupSteps.length ? "success" : "info"}>
-              {`${completed} of ${setupSteps.length} steps completed`}
-            </s-badge>
-          </s-stack>
-          <s-stack direction="block" gap="small-200">
-            {setupSteps.map((step) => (
-              <s-box key={step.key} padding="base" border="base" borderRadius="base">
-                <s-stack
-                  direction="inline"
-                  gap="base"
-                  alignItems="center"
-                  justifyContent="space-between"
-                >
-                  <s-stack direction="inline" gap="small-200" alignItems="center">
-                    <s-checkbox
-                      label={step.label}
-                      labelAccessibilityVisibility="exclusive"
-                      {...(step.done ? { checked: true } : {})}
-                      disabled
-                    />
-                    <s-stack direction="block" gap="small-400">
-                      <s-text {...(step.done ? { color: "subdued" } : {})}>
-                        {step.label}
-                      </s-text>
-                      <s-text color="subdued">{step.description}</s-text>
-                    </s-stack>
-                  </s-stack>
-                  <s-button
-                    href={step.actionHref}
-                    {...(step.actionHref === addToThemeUrl
-                      ? { target: "_blank" }
-                      : {})}
-                  >
-                    {step.actionLabel}
-                  </s-button>
-                </s-stack>
-              </s-box>
-            ))}
-          </s-stack>
-        </s-stack>
-      </s-section>
+      <SetupGuide steps={setupSteps} />
 
-      <s-section padding="base">
-        <s-grid
-          gridTemplateColumns="@container (inline-size <= 400px) 1fr, 1fr auto 1fr auto 1fr"
-          gap="small"
-        >
-          <s-clickable
-            href="/app/activity"
-            paddingBlock="small-400"
-            paddingInline="small-100"
-            borderRadius="base"
-          >
-            <s-grid gap="small-300">
-              <s-heading>Active sessions</s-heading>
-              <s-stack direction="inline" gap="small-200">
-                <s-text>{String(stats.activeSessions)}</s-text>
-              </s-stack>
-            </s-grid>
-          </s-clickable>
-          <s-divider direction="block" />
-          <s-clickable
-            href="/app/activity"
-            paddingBlock="small-400"
-            paddingInline="small-100"
-            borderRadius="base"
-          >
-            <s-grid gap="small-300">
-              <s-heading>Total chats</s-heading>
-              <s-stack direction="inline" gap="small-200">
-                <s-text>{String(stats.totalChats)}</s-text>
-              </s-stack>
-            </s-grid>
-          </s-clickable>
-          <s-divider direction="block" />
-          <s-clickable
-            href="/app/activity"
-            paddingBlock="small-400"
-            paddingInline="small-100"
-            borderRadius="base"
-          >
-            <s-grid gap="small-300">
-              <s-heading>Conversion rate</s-heading>
-              <s-stack direction="inline" gap="small-200">
-                <s-text>{`${stats.conversionRate}%`}</s-text>
-              </s-stack>
-            </s-grid>
-          </s-clickable>
-        </s-grid>
-      </s-section>
+      <MetricsCard metrics={metrics} />
 
-      {stats.totalChats === 0 ? (
-        <s-section heading="Conversations">
-          <s-grid gap="base" justifyItems="center">
-            <s-heading>No conversations yet</s-heading>
-            <s-paragraph>
-              Once shoppers chat with the assistant on your storefront, their
-              conversations will show up here.
-            </s-paragraph>
-            <s-button-group>
-              <s-button slot="primary-action" href="/app/settings" variant="primary">
-                Test the widget
-              </s-button>
-              <s-button slot="secondary-actions" href="/app/knowledge">
-                Add answers
-              </s-button>
-            </s-button-group>
-          </s-grid>
-        </s-section>
-      ) : null}
+      {stats.totalChats === 0 ? <ConversationsEmptyState /> : null}
     </s-page>
   );
 }

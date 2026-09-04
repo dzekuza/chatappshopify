@@ -149,7 +149,7 @@ export default function ActivityThread() {
                 <s-box
                   key={m.id}
                   padding="base"
-                  borderWidth="base"
+                  border="base"
                   borderRadius="base"
                   {...(m.role !== "user" ? { background: "subdued" } : {})}
                 >
@@ -192,7 +192,13 @@ export default function ActivityThread() {
               rows={3}
               disabled={isReplying}
             />
-            <s-button type="submit" variant="primary" disabled={isReplying}>
+            <s-button
+              type="submit"
+              variant="primary"
+              icon="send"
+              disabled={isReplying}
+              {...(isReplying ? { loading: true } : {})}
+            >
               {isReplying ? "Sending…" : "Send reply"}
             </s-button>
           </s-stack>

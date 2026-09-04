@@ -1,4 +1,5 @@
 import { describeRange } from "../../media-timestamp";
+import { EmptyState } from "../ui/empty-state";
 
 export type KnowledgeEntryRow = {
   id: string;
@@ -42,16 +43,19 @@ export function KnowledgeEntriesTable({
   if (entries.length === 0) {
     return (
       <s-section>
-        <s-grid gap="base" justifyItems="center">
-          <s-heading>No custom questions yet</s-heading>
-          <s-paragraph>
-            Add exact answers for questions you want handled a specific way,
-            or attach extra info to a product.
-          </s-paragraph>
-          <s-button variant="primary" commandFor="knowledge-modal" onClick={onAddNew}>
+        <EmptyState
+          heading="No custom questions yet"
+          description="Add exact answers for questions you want handled a specific way, or attach extra info to a product."
+        >
+          <s-button
+            variant="primary"
+            icon="plus"
+            commandFor="knowledge-modal"
+            onClick={onAddNew}
+          >
             Add a question
           </s-button>
-        </s-grid>
+        </EmptyState>
       </s-section>
     );
   }

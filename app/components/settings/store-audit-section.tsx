@@ -18,6 +18,13 @@ function statusTone(status: string): "success" | "critical" | "caution" | "info"
   return "info";
 }
 
+function statusIcon(status: string): JSX.IntrinsicElements["s-badge"]["icon"] {
+  if (status === "complete") return "check-circle";
+  if (status === "failed") return "alert-circle";
+  if (status === "running" || status === "pending") return "clock";
+  return "info";
+}
+
 function statusLabel(status: string) {
   if (status === "complete") return "Complete";
   if (status === "failed") return "Failed";
@@ -45,12 +52,17 @@ export function StoreAuditSection({
         <s-stack direction="inline" gap="small-200" alignItems="center">
           <s-text color="subdued">Status:</s-text>
           {audit ? (
-            <s-badge tone={statusTone(audit.status)}>
+            <s-badge tone={statusTone(audit.status)} icon={statusIcon(audit.status)}>
               {statusLabel(audit.status)}
             </s-badge>
           ) : (
-            <s-badge tone="info">Not run yet</s-badge>
+            <s-badge tone="info" icon="info">
+              Not run yet
+            </s-badge>
           )}
+          {isRunning ? (
+            <s-spinner accessibilityLabel="Store audit running" />
+          ) : null}
         </s-stack>
 
         {audit?.lastRunAt ? (
@@ -65,6 +77,7 @@ export function StoreAuditSection({
 
         <s-button
           variant="secondary"
+          icon="refresh"
           onClick={onRefresh}
           {...(isRunning ? { loading: true } : {})}
         >

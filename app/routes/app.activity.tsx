@@ -1,9 +1,11 @@
 import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { useLoaderData, useNavigate } from "react-router";
+import { useLoaderData, useNavigate, useNavigation } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { computeChatStats } from "../lib/chat-stats.server";
+import { MetricsCard, type Metric } from "../components/ui/metrics-card";
+import { ConversationsEmptyState } from "../components/ui/conversations-empty-state";
 
 const PAGE_SIZE = 50;
 
@@ -96,63 +98,54 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export default function Activity() {
   const { conversations, stats } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
+  const navigation = useNavigation();
+
+  // Opening a conversation is a client-side navigation that waits on that
+  // route's loader — without this the table just sits there looking dead.
+  const openingConversation =
+    navigation.state === "loading" &&
+    navigation.location?.pathname.startsWith("/app/activity/");
+
+  const metrics: Metric[] = [
+    {
+      key: "active",
+      label: "Active sessions",
+      value: String(stats.activeSessions),
+      description: "Chats active in the last 15 minutes",
+      icon: "chat",
+    },
+    {
+      key: "total",
+      label: "Total customer chats",
+      value: String(stats.totalChats),
+      description: "All-time conversations with shoppers",
+      icon: "order",
+    },
+    {
+      key: "conversion",
+      label: "Conversion rate",
+      value: `${stats.conversionRate}%`,
+      description: `${stats.convertedCount} of ${stats.totalCustomersWithEmail} chat customers went on to place an order`,
+      icon: "cart",
+    },
+  ];
 
   return (
     <s-page heading="Activity">
-      <s-section heading="Overview" padding="base">
-        <s-grid
-          gridTemplateColumns="@container (inline-size <= 400px) 1fr, 1fr auto 1fr auto 1fr"
-          gap="small"
-        >
-          <s-grid gap="small-300">
-            <s-heading>Active sessions</s-heading>
-            <s-stack direction="inline" gap="small-200">
-              <s-text>{String(stats.activeSessions)}</s-text>
-            </s-stack>
-            <s-text color="subdued">Chats active in the last 15 minutes</s-text>
-          </s-grid>
-          <s-divider direction="block" />
-          <s-grid gap="small-300">
-            <s-heading>Total customer chats</s-heading>
-            <s-stack direction="inline" gap="small-200">
-              <s-text>{String(stats.totalChats)}</s-text>
-            </s-stack>
-            <s-text color="subdued">All-time conversations with shoppers</s-text>
-          </s-grid>
-          <s-divider direction="block" />
-          <s-grid gap="small-300">
-            <s-heading>Conversion rate</s-heading>
-            <s-stack direction="inline" gap="small-200">
-              <s-text>{`${stats.conversionRate}%`}</s-text>
-            </s-stack>
-            <s-text color="subdued">
-              {stats.convertedCount} of {stats.totalCustomersWithEmail} chat
-              customers went on to place an order
-            </s-text>
-          </s-grid>
-        </s-grid>
-      </s-section>
+      <MetricsCard heading="Overview" metrics={metrics} />
 
       {conversations.length === 0 ? (
-        <s-section heading="Conversations">
-          <s-grid gap="base" justifyItems="center">
-            <s-heading>No conversations yet</s-heading>
-            <s-paragraph>
-              Once shoppers chat with the assistant on your storefront, their
-              conversations will show up here.
-            </s-paragraph>
-            <s-button-group>
-              <s-button slot="primary-action" href="/app/settings" variant="primary">
-                Test the widget
-              </s-button>
-              <s-button slot="secondary-actions" href="/app/knowledge">
-                Add answers
-              </s-button>
-            </s-button-group>
-          </s-grid>
-        </s-section>
+        <ConversationsEmptyState />
       ) : (
         <s-section padding="none">
+          {openingConversation ? (
+            <s-box padding="base">
+              <s-stack direction="inline" gap="small-200" alignItems="center">
+                <s-spinner accessibilityLabel="Opening conversation" />
+                <s-text color="subdued">Opening conversation…</s-text>
+              </s-stack>
+            </s-box>
+          ) : null}
           <s-table variant="auto">
             <s-table-header-row>
               <s-table-header listSlot="primary">Conversation</s-table-header>
@@ -201,7 +194,9 @@ export default function Activity() {
                     <s-table-cell>{formatDate(c.lastActivity)}</s-table-cell>
                     <s-table-cell>
                       {c.needsHuman ? (
-                        <s-badge tone="warning">Needs attention</s-badge>
+                        <s-badge tone="warning" icon="alert-triangle">
+                          Needs attention
+                        </s-badge>
                       ) : null}
                     </s-table-cell>
                   </s-table-row>

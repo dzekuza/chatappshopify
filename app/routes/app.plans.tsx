@@ -12,6 +12,7 @@ import {
   countConversationsThisMonth,
   FREE_PLAN_MONTHLY_CONVERSATIONS,
 } from "../billing.server";
+import { PlanCard, type Plan } from "../components/plans/plan-card";
 
 // REAUTH_URL_HEADER in @shopify/shopify-app-react-router — the header the
 // library puts the charge confirmation URL on when it answers an XHR.
@@ -99,7 +100,7 @@ const FREE_PLAN = "Free";
 const MONTHLY_PLAN = "Monthly Plan";
 const PRO_PLAN = "Pro Plan";
 
-const PLANS = [
+const PLANS: Plan[] = [
   {
     name: FREE_PLAN,
     price: "$0",
@@ -134,11 +135,15 @@ const PLANS = [
 ];
 
 // Monthly and Pro sit inline in the top row, Free spans the full width below.
-const DISPLAY_ORDER_PLANS = [
+// These are two separate grids rather than one 3-cell grid with the Free card
+// spanning both columns: s-box has no gridColumn/gridArea prop, so the span
+// silently did nothing and Free rendered as a half-width cell with an empty
+// slot beside it.
+const PAID_PLANS = [
   PLANS.find((p) => p.name === MONTHLY_PLAN)!,
   PLANS.find((p) => p.name === PRO_PLAN)!,
-  PLANS.find((p) => p.name === FREE_PLAN)!,
 ];
+const FREE_PLAN_DETAILS = PLANS.find((p) => p.name === FREE_PLAN)!;
 
 export default function Plans() {
   const { confirmationUrl, currentPlan, conversationsThisMonth, freeLimit, error } =
@@ -166,6 +171,10 @@ export default function Plans() {
     return `/app/plans?${params.toString()}`;
   };
 
+  const isPending = (planName: string) =>
+    navigation.state !== "idle" &&
+    new URLSearchParams(navigation.location?.search).get("plan") === planName;
+
   return (
     <s-page heading="Choose a plan">
       {error ? (
@@ -174,59 +183,36 @@ export default function Plans() {
         </s-banner>
       ) : null}
       <s-section heading="Pick the plan that fits your store">
-        {activePlan === FREE_PLAN ? (
-          <s-paragraph>
-            You&rsquo;re on the Free plan — {conversationsThisMonth} of{" "}
-            {freeLimit} conversations used this month. New conversations pause
-            once you reach the limit; conversations already under way keep
-            going.
-          </s-paragraph>
-        ) : null}
-        <s-grid gridTemplateColumns="repeat(2, 1fr)" gap="base">
-          {DISPLAY_ORDER_PLANS.map((plan) => (
-            <s-box
-              key={plan.name}
-              padding="base"
-              borderWidth="base"
-              borderRadius="base"
-              minInlineSize="280px"
-              {...(plan.name === FREE_PLAN
-                ? { gridColumn: "1 / -1" }
-                : {})}
-            >
-              <s-stack direction="block" gap="base">
-                <s-heading>{plan.name}</s-heading>
-                <s-text type="strong">{plan.price}/month</s-text>
-                <s-text color="subdued">{plan.tagline}</s-text>
-                <s-unordered-list>
-                  {plan.features.map((feature) => (
-                    <s-list-item key={feature}>{feature}</s-list-item>
-                  ))}
-                </s-unordered-list>
-                {plan.name === activePlan ? (
-                  <s-badge tone="success">Current plan</s-badge>
-                ) : plan.name === FREE_PLAN ? (
-                  <s-text color="subdued">
-                    Cancel a paid plan from your Shopify admin to return to
-                    Free.
-                  </s-text>
-                ) : (
-                  <s-button
-                    href={planHref(plan.name)}
-                    variant="primary"
-                    {...(navigation.state !== "idle" &&
-                    new URLSearchParams(navigation.location?.search).get("plan") ===
-                      plan.name
-                      ? { loading: true }
-                      : {})}
-                  >
-                    Start free trial
-                  </s-button>
-                )}
-              </s-stack>
-            </s-box>
-          ))}
-        </s-grid>
+        <s-stack direction="block" gap="base">
+          {activePlan === FREE_PLAN ? (
+            <s-paragraph>
+              You&rsquo;re on the Free plan — {conversationsThisMonth} of{" "}
+              {freeLimit} conversations used this month. New conversations pause
+              once you reach the limit; conversations already under way keep
+              going.
+            </s-paragraph>
+          ) : null}
+          <s-grid
+            gridTemplateColumns="@container (inline-size <= 640px) 1fr, repeat(2, 1fr)"
+            gap="base"
+          >
+            {PAID_PLANS.map((plan) => (
+              <PlanCard
+                key={plan.name}
+                plan={plan}
+                isCurrent={plan.name === activePlan}
+                isFree={false}
+                href={planHref(plan.name)}
+                loading={isPending(plan.name)}
+              />
+            ))}
+          </s-grid>
+          <PlanCard
+            plan={FREE_PLAN_DETAILS}
+            isCurrent={activePlan === FREE_PLAN}
+            isFree
+          />
+        </s-stack>
       </s-section>
     </s-page>
   );
