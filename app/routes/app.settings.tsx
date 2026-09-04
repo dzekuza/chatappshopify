@@ -1,10 +1,11 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import type {
   ActionFunctionArgs,
   HeadersFunction,
   LoaderFunctionArgs,
 } from "react-router";
 import { useFetcher, useLoaderData } from "react-router";
+import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate, MONTHLY_PLAN, PRO_PLAN } from "../shopify.server";
 import prisma from "../db.server";
@@ -152,12 +153,25 @@ export default function SettingsPage() {
   const { settings, addToThemeUrl, isProPlan } = useLoaderData<typeof loader>();
   const fetcher = useFetcher<typeof action>();
 
+  const shopify = useAppBridge();
+
   const [form, setForm] = useState(settings);
   const [isUploadingIcon, setIsUploadingIcon] = useState(false);
   const [iconUploadError, setIconUploadError] = useState<string | null>(null);
 
-  const isSaving = fetcher.state !== "idle";
   const saveError = fetcher.data && "error" in fetcher.data ? fetcher.data.error : undefined;
+
+  // The save bar owns the in-flight state, so a successful save just needs
+  // confirming — previously this was an info banner that sat in the page for
+  // the duration of the request, which isn't the pattern for a transient save.
+  const wasSaving = useRef(false);
+  useEffect(() => {
+    const isSaving = fetcher.state !== "idle";
+    if (wasSaving.current && !isSaving && fetcher.data && !("error" in fetcher.data)) {
+      shopify.toast.show("Settings saved");
+    }
+    wasSaving.current = isSaving;
+  }, [fetcher.state, fetcher.data, shopify]);
 
   const update = <K extends keyof WidgetSettings>(
     key: K,
@@ -211,22 +225,22 @@ export default function SettingsPage() {
   };
 
   return (
-    <s-page heading="AI Chat Widget">
+    <s-page heading="Settings">
       <s-link slot="breadcrumb-actions" href="/app">
         Home
       </s-link>
-      <s-button slot="secondary-actions" href={addToThemeUrl} target="_blank">
+      <s-button
+        slot="secondary-actions"
+        href={addToThemeUrl}
+        target="_blank"
+        icon="theme"
+      >
         Add to theme
       </s-button>
 
       {saveError ? (
         <s-banner tone="critical" heading="Couldn't save settings">
           <s-paragraph>{saveError}</s-paragraph>
-        </s-banner>
-      ) : null}
-      {isSaving ? (
-        <s-banner tone="info" heading="Saving…">
-          <s-paragraph>Saving your widget settings.</s-paragraph>
         </s-banner>
       ) : null}
 
@@ -249,6 +263,7 @@ export default function SettingsPage() {
             enabled={form.enabled}
             welcomeMessage={form.welcomeMessage}
             systemPrompt={form.systemPrompt}
+            geminiModel={form.geminiModel}
             onChange={update}
           />
 
