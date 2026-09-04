@@ -68,8 +68,8 @@ export function KnowledgeEntriesTable({
           <s-table-header listSlot="secondary">Answer</s-table-header>
           <s-table-header listSlot="inline">Media</s-table-header>
           <s-table-header listSlot="inline">Source</s-table-header>
-          <s-table-header listSlot="inline">Created by</s-table-header>
-          <s-table-header listSlot="labeled" />
+          <s-table-header listSlot="inline">Author</s-table-header>
+          <s-table-header listSlot="labeled">Actions</s-table-header>
         </s-table-header-row>
         <s-table-body>
           {entries.map((entry) => {

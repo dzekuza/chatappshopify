@@ -4,7 +4,7 @@ import type {
   HeadersFunction,
   LoaderFunctionArgs,
 } from "react-router";
-import { useFetcher, useLoaderData } from "react-router";
+import { useFetcher, useLoaderData, useSearchParams } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
@@ -26,6 +26,11 @@ import {
   UnansweredQuestionsPanel,
 } from "../components/knowledge/unanswered-questions-panel";
 import { QueryLogPanel } from "../components/knowledge/query-log-panel";
+import { SuggestedKnowledgePanel } from "../components/knowledge/suggested-knowledge-panel";
+import type {
+  KnowledgeSuggestion,
+  SuggestionsResult,
+} from "../knowledge-suggestions.server";
 import {
   KnowledgeSyncSection,
   type KnowledgeCollection,
@@ -33,33 +38,36 @@ import {
 import { StoreAuditSection } from "../components/settings/store-audit-section";
 import { CatalogSyncSection } from "../components/knowledge/catalog-sync-section";
 
-const RECENT_QUERY_LIMIT = 50;
-const UNANSWERED_QUESTION_LIMIT = 20;
+const PAGE_SIZE = 15;
+
+// Page numbers arrive from the URL, so they can be anything a merchant types
+// or a stale bookmark carries. Anything that isn't a positive integer falls
+// back to the first page.
+function pageParam(value: string | null) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 1;
+}
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
 
+  const url = new URL(request.url);
+  const requestedLogPage = pageParam(url.searchParams.get("logPage"));
+  const requestedUnansweredPage = pageParam(
+    url.searchParams.get("unansweredPage"),
+  );
+
   const [
     entries,
-    recentQueries,
-    unansweredQueries,
     widgetSettings,
     storeAudit,
     catalogSync,
+    queryLogCount,
+    unansweredCount,
   ] = await Promise.all([
       prisma.knowledgeEntry.findMany({
         where: { shop: session.shop },
         orderBy: { createdAt: "desc" },
-      }),
-      prisma.knowledgeQuery.findMany({
-        where: { shop: session.shop },
-        orderBy: { createdAt: "desc" },
-        take: RECENT_QUERY_LIMIT,
-      }),
-      prisma.knowledgeQuery.findMany({
-        where: { shop: session.shop, matched: false },
-        orderBy: { createdAt: "desc" },
-        take: UNANSWERED_QUESTION_LIMIT,
       }),
       prisma.widgetSettings.upsert({
         where: { shop: session.shop },
@@ -81,7 +89,36 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           lastError: true,
         },
       }),
+      prisma.knowledgeQuery.count({ where: { shop: session.shop } }),
+      prisma.knowledgeQuery.count({
+        where: { shop: session.shop, matched: false },
+      }),
     ]);
+
+  const queryLogPageCount = Math.max(1, Math.ceil(queryLogCount / PAGE_SIZE));
+  const unansweredPageCount = Math.max(
+    1,
+    Math.ceil(unansweredCount / PAGE_SIZE),
+  );
+  // Clamp before querying so a hand-edited or stale page number lands on a
+  // page that exists instead of an empty table.
+  const logPage = Math.min(requestedLogPage, queryLogPageCount);
+  const unansweredPage = Math.min(requestedUnansweredPage, unansweredPageCount);
+
+  const [recentQueries, unansweredQueries] = await Promise.all([
+    prisma.knowledgeQuery.findMany({
+      where: { shop: session.shop },
+      orderBy: { createdAt: "desc" },
+      skip: (logPage - 1) * PAGE_SIZE,
+      take: PAGE_SIZE,
+    }),
+    prisma.knowledgeQuery.findMany({
+      where: { shop: session.shop, matched: false },
+      orderBy: { createdAt: "desc" },
+      skip: (unansweredPage - 1) * PAGE_SIZE,
+      take: PAGE_SIZE,
+    }),
+  ]);
 
   const knowledgeCollections = Array.isArray(widgetSettings.knowledgeCollections)
     ? (widgetSettings.knowledgeCollections as unknown as KnowledgeCollection[])
@@ -94,6 +131,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     knowledgeCollections,
     storeAudit,
     catalogSync,
+    logPage,
+    queryLogPageCount,
+    unansweredPage,
+    unansweredPageCount,
   };
 };
 
@@ -125,7 +166,25 @@ export default function Knowledge() {
     knowledgeCollections,
     storeAudit,
     catalogSync,
+    logPage,
+    queryLogPageCount,
+    unansweredPage,
+    unansweredPageCount,
   } = useLoaderData<typeof loader>();
+  const [, setSearchParams] = useSearchParams();
+
+  // Mutate the existing params rather than building a fresh set: Shopify
+  // opens the app with shop/host/embedded on the URL and App Bridge reads
+  // them off the document, so dropping them breaks the embedded frame.
+  const goToPage = (param: string, page: number) => {
+    setSearchParams(
+      (previous) => {
+        previous.set(param, String(page));
+        return previous;
+      },
+      { preventScrollReset: true },
+    );
+  };
   const fetcher = useFetcher<typeof action>();
   const collectionsFetcher = useFetcher<{
     ok: boolean;
@@ -148,6 +207,7 @@ export default function Knowledge() {
       lastError: string | null;
     } | null;
   }>();
+  const suggestionsFetcher = useFetcher<SuggestionsResult>();
   const modalRef = useRef<KnowledgeEntryModalHandle>(null);
   const shopify = useAppBridge();
   const [isSyncingCollections, setIsSyncingCollections] = useState(false);
@@ -161,6 +221,9 @@ export default function Knowledge() {
   const isRunningAudit =
     auditFetcher.state !== "idle" || currentAudit?.status === "running";
   const isSaving = fetcher.state !== "idle";
+  const isAnalyzing = suggestionsFetcher.state !== "idle";
+  const suggestions = suggestionsFetcher.data?.suggestions ?? [];
+  const suggestionsError = suggestionsFetcher.data?.error ?? null;
 
   const saveCollections = (next: KnowledgeCollection[]) => {
     collectionsFetcher.submit(
@@ -220,6 +283,23 @@ export default function Knowledge() {
     modalRef.current?.openFromQuery(question);
   };
 
+  const analyzeConversations = () => {
+    suggestionsFetcher.submit(null, {
+      method: "POST",
+      action: "/app/knowledge/suggestions",
+    });
+  };
+
+  const addSuggestion = (suggestion: KnowledgeSuggestion) => {
+    modalRef.current?.openFromSuggestion({
+      question:
+        suggestion.kind === "product" && suggestion.productTitle
+          ? `${suggestion.productTitle}: ${suggestion.question}`
+          : suggestion.question,
+      answer: suggestion.answer,
+    });
+  };
+
   return (
     <s-page heading="Knowledge">
       <s-button
@@ -263,20 +343,37 @@ export default function Knowledge() {
         onRefresh={refreshAudit}
       />
 
-      <UnansweredQuestionsPanel
-        questions={unansweredQueries}
-        isConverting={isSaving}
-        onConvert={convertQuestionToFaq}
-      />
-
-      <QueryLogPanel queries={recentQueries} />
-
       <KnowledgeEntriesTable
         entries={entries}
         isSaving={isSaving}
         onAddNew={openNewEntry}
         onEdit={openEditEntry}
         onDelete={handleDelete}
+      />
+
+      <SuggestedKnowledgePanel
+        suggestions={suggestions}
+        hasAnalyzed={suggestionsFetcher.data !== undefined}
+        isAnalyzing={isAnalyzing}
+        error={suggestionsError}
+        onAnalyze={analyzeConversations}
+        onAdd={addSuggestion}
+      />
+
+      <UnansweredQuestionsPanel
+        questions={unansweredQueries}
+        isConverting={isSaving}
+        onConvert={convertQuestionToFaq}
+        page={unansweredPage}
+        pageCount={unansweredPageCount}
+        onPageChange={(page) => goToPage("unansweredPage", page)}
+      />
+
+      <QueryLogPanel
+        queries={recentQueries}
+        page={logPage}
+        pageCount={queryLogPageCount}
+        onPageChange={(page) => goToPage("logPage", page)}
       />
 
       <KnowledgeEntryModal ref={modalRef} fetcher={fetcher} />

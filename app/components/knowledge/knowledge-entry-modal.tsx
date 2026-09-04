@@ -66,6 +66,7 @@ export type KnowledgeEntryModalHandle = {
   openNew: () => void;
   openEdit: (entry: KnowledgeEntryForEdit) => void;
   openFromQuery: (question: string) => void;
+  openFromSuggestion: (input: { question: string; answer: string }) => void;
 };
 
 // The route's fetcher is shared across three action intents (save, delete,
@@ -153,6 +154,14 @@ export const KnowledgeEntryModal = forwardRef<
     },
     openFromQuery: (question) => {
       setForm({ ...EMPTY_FORM, question, fromQueryLog: true });
+      setPickerMode(null);
+      modalRef.current?.showOverlay();
+    },
+    // A suggestion may name a product, but it only carries the title the AI
+    // read off the catalog — never an id — so it always opens as a free-form
+    // entry the merchant can re-point at a product themselves.
+    openFromSuggestion: ({ question, answer }) => {
+      setForm({ ...EMPTY_FORM, question, answer, fromQueryLog: true });
       setPickerMode(null);
       modalRef.current?.showOverlay();
     },

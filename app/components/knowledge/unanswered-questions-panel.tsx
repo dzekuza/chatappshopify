@@ -1,3 +1,5 @@
+import { PaginationControls } from "../ui/pagination-controls";
+
 export type UnansweredQuestion = {
   id: string;
   question: string;
@@ -8,12 +10,18 @@ export type UnansweredQuestionsPanelProps = {
   questions: UnansweredQuestion[];
   isConverting: boolean;
   onConvert: (question: string) => void;
+  page: number;
+  pageCount: number;
+  onPageChange: (page: number) => void;
 };
 
 export function UnansweredQuestionsPanel({
   questions,
   isConverting,
   onConvert,
+  page,
+  pageCount,
+  onPageChange,
 }: UnansweredQuestionsPanelProps) {
   return (
     <s-section heading="Top unanswered questions">
@@ -23,6 +31,7 @@ export function UnansweredQuestionsPanel({
           FAQ doesn&rsquo;t cover, it will show up here.
         </s-paragraph>
       ) : (
+        <s-stack direction="block" gap="base">
         <s-stack direction="block" gap="small-300">
           {questions.map((entry) => (
             <s-stack
@@ -42,6 +51,12 @@ export function UnansweredQuestionsPanel({
               </s-button>
             </s-stack>
           ))}
+        </s-stack>
+        <PaginationControls
+          page={page}
+          pageCount={pageCount}
+          onPageChange={onPageChange}
+        />
         </s-stack>
       )}
     </s-section>

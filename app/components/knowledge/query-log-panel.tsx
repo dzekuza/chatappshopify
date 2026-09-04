@@ -1,3 +1,5 @@
+import { PaginationControls } from "../ui/pagination-controls";
+
 export type QueryLogEntry = {
   id: string;
   question: string;
@@ -5,7 +7,19 @@ export type QueryLogEntry = {
   createdAt: string | Date;
 };
 
-export function QueryLogPanel({ queries }: { queries: QueryLogEntry[] }) {
+export type QueryLogPanelProps = {
+  queries: QueryLogEntry[];
+  page: number;
+  pageCount: number;
+  onPageChange: (page: number) => void;
+};
+
+export function QueryLogPanel({
+  queries,
+  page,
+  pageCount,
+  onPageChange,
+}: QueryLogPanelProps) {
   return (
     <s-section heading="FAQ query log">
       {queries.length === 0 ? (
@@ -17,6 +31,7 @@ export function QueryLogPanel({ queries }: { queries: QueryLogEntry[] }) {
           </s-paragraph>
         </s-stack>
       ) : (
+        <s-stack direction="block" gap="base">
         <s-table variant="auto">
           <s-table-header-row>
             <s-table-header listSlot="primary">Question</s-table-header>
@@ -41,6 +56,12 @@ export function QueryLogPanel({ queries }: { queries: QueryLogEntry[] }) {
             ))}
           </s-table-body>
         </s-table>
+        <PaginationControls
+          page={page}
+          pageCount={pageCount}
+          onPageChange={onPageChange}
+        />
+        </s-stack>
       )}
     </s-section>
   );
