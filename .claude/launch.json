@@ -8,7 +8,8 @@
         "run",
         "dev",
         "--",
-        "--use-localhost"
+        "--config",
+        "dev"
       ],
       "port": 5173
     }

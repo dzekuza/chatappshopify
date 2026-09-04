@@ -20,8 +20,9 @@ npm run build             # react-router build
 npm run typecheck         # react-router typegen && tsc --noEmit — run this after any route/schema change
 npm run lint               # eslint --cache
 
-npm run deploy             # shopify app deploy — pushes shopify.app.toml config + the theme extension as a new app version
-npx vercel deploy --prod   # deploys the web app itself (admin routes, API routes) — separate from `npm run deploy`
+git push                   # the normal way to ship — see "Deploying" below
+npm run deploy -- --config <ai-chat-app|dev>   # manual shopify app deploy (config + theme extension only)
+npx vercel deploy --prod   # manual web-app deploy; bypasses CI and ships your dirty working tree — avoid
 
 npx prisma generate        # regenerate Prisma client after schema.prisma changes
 npx prisma migrate dev --name <name>   # create + apply a migration locally
@@ -30,12 +31,35 @@ npx prisma studio          # inspect the DB
 
 No test suite exists in this repo currently.
 
-### Deploying — two separate pushes, easy to forget one
+### Deploying — `git push` does everything
 
-- `npm run deploy` (`shopify app deploy`) only pushes `shopify.app.toml` config and the theme extension. It does **not** touch the running web server.
-- `npx vercel deploy --prod` only pushes the web app. It does **not** register anything with Shopify.
-- After changing `application_url`/`redirect_urls` in `shopify.app.toml`, you must run `npm run deploy` again for Shopify to pick up the new URL.
-- `shopify.app.toml` has `automatically_update_urls_on_dev = true`, so every `npm run dev` run overwrites `application_url`/`redirect_urls` back to a local dev tunnel URL. Re-run `npm run deploy` after a dev session if you want production pointed at Vercel again.
+A push to `main` triggers two independent pipelines, and together they cover both runtimes:
+
+- **Vercel's GitHub integration** builds and deploys the web app. The Vercel project
+  `ai-chat-widget` (see `.vercel/project.json`) is git-connected — no CLI step needed.
+- **`.github/workflows/deploy-prod.yml`** runs typecheck → lint → build, then
+  `shopify app deploy --config ai-chat-app`, pushing the prod config + theme extension.
+
+So: commit, push, done. Both the admin/API server and the Shopify app version update.
+
+Things worth knowing:
+
+- **Don't run `npx vercel deploy --prod` as a matter of course.** It's redundant with the
+  git integration and it deploys your *working tree*, dirty files included, skipping the
+  CI gate entirely. Deployment history is littered with `gitDirty: "1"` deploys from agents
+  doing exactly this. Reach for it only for a deliberate out-of-band push.
+- **CI only deploys the prod Shopify config** (`--config ai-chat-app`). The dev app
+  (`shopify.app.dev.toml`, Orby Chat DEV) has no CI step — deploy it by hand with
+  `npm run deploy -- --config dev` when you change its config or the theme extension.
+- **There is no `shopify.app.toml`** in this repo, only `shopify.app.ai-chat-app.toml` and
+  `shopify.app.dev.toml`. Every `shopify app` command needs an explicit `--config`.
+- **Both configs set `automatically_update_urls_on_dev = false`** on purpose: both apps are
+  hosted (`ai-chat-widget-vert` / `ai-chat-widget-dev` on Vercel), so letting `shopify app dev`
+  rewrite `application_url` to a tunnel breaks the hosted app the moment the tunnel dies.
+  If you do flip it to run a tunnel, restore the file and re-run
+  `npm run deploy -- --config <name>` afterwards to point the app back at Vercel.
+- After changing `application_url`/`redirect_urls` in a config, Shopify only picks up the
+  new URL on the next `shopify app deploy` for that config.
 
 ## Architecture
 

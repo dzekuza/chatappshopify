@@ -36,3 +36,6 @@ database.sqlite
 
 # Keep the template checked in — the ignore rules above would swallow it.
 !.env.example
+
+# eslint cache
+.eslintcache
