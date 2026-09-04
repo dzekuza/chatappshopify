@@ -40,10 +40,29 @@ A push to `main` triggers two independent pipelines, and together they cover bot
 - **`.github/workflows/deploy-prod.yml`** runs typecheck → lint → build, then
   `shopify app deploy --config ai-chat-app`, pushing the prod config + theme extension.
 
-So: commit, push, done. Both the admin/API server and the Shopify app version update.
+So: commit, push, done — *for the production app*. The dev app is not fully covered;
+see the two bullets below.
 
 Things worth knowing:
 
+- **The `ai-chat-widget-dev` Vercel project does NOT auto-deploy to production.** It is
+  git-connected to this same repo, but its Production Branch isn't `main`, so a push
+  produces a *preview* (`target: null`) and leaves `ai-chat-widget-dev.vercel.app` —
+  which `shopify.app.dev.toml` points `application_url` at — on whatever commit was last
+  pushed there by CLI. Every `target: "production"` deploy in that project's history came
+  from a manual `vercel --prod`. Until someone sets Production Branch to `main` in that
+  project's Git settings, shipping a change to the dev app (Orby Chat DEV, dev store
+  ohubudemo) means a deliberate CLI deploy targeted at it. Target it *without* relinking
+  — `.vercel/project.json` points at the prod project, and `vercel link` would overwrite it:
+
+  ```
+  VERCEL_ORG_ID=team_vz0VwiDg7l1Zy1SNy5BurmNv \
+  VERCEL_PROJECT_ID=prj_WkLK6OPHeNktlkMS9dNszb4tKl5u \
+  npx vercel deploy --prod
+  ```
+
+  Commit and push first so the working tree matches `main` — this ships the tree, not the
+  commit, and that's the whole reason the rule below exists.
 - **Don't run `npx vercel deploy --prod` as a matter of course.** It's redundant with the
   git integration and it deploys your *working tree*, dirty files included, skipping the
   CI gate entirely. Deployment history is littered with `gitDirty: "1"` deploys from agents
