@@ -12,6 +12,8 @@ import prisma from "../db.server";
 import { WidgetSection } from "../components/settings/widget-section";
 import { AppearanceSection } from "../components/settings/appearance-section";
 import { AiModelSection } from "../components/settings/ai-model-section";
+import { TelegramSection } from "../components/settings/telegram-section";
+import { isTelegramConfigured, telegramBotUsername } from "../telegram.server";
 import type { KnowledgeCollection } from "../components/settings/knowledge-sync-section";
 import type { WidgetSettings } from "@prisma/client";
 import { FREE_TIER_DEFAULT_MODEL } from "../gemini-model.server";
@@ -50,19 +52,37 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   // The DB upsert and the Shopify billing check don't depend on each
   // other's result — running them concurrently instead of sequentially
   // roughly halves this loader's critical path.
-  const [settings, { appSubscriptions }] = await Promise.all([
+  const [settings, { appSubscriptions }, telegramLink] = await Promise.all([
     prisma.widgetSettings.upsert({
       where: { shop: session.shop },
       update: {},
       create: { shop: session.shop },
     }),
     billing.check({ plans: [MONTHLY_PLAN, PRO_PLAN] }),
+    prisma.telegramLink.findUnique({ where: { shop: session.shop } }),
   ]);
   const isProPlan = appSubscriptions.some((sub) => sub.name === PRO_PLAN);
 
   const addToThemeUrl = `https://${session.shop}/admin/themes/current/editor?context=apps&activateAppId=${process.env.SHOPIFY_API_KEY}/${THEME_BLOCK_HANDLE}`;
 
-  return { settings, addToThemeUrl, isProPlan };
+  return {
+    settings,
+    addToThemeUrl,
+    isProPlan,
+    telegram: {
+      link: telegramLink
+        ? {
+            linkCode: telegramLink.linkCode,
+            chatId: telegramLink.chatId,
+            chatTitle: telegramLink.chatTitle,
+            enabled: telegramLink.enabled,
+            feedScope: telegramLink.feedScope,
+          }
+        : null,
+      botUsername: telegramBotUsername(),
+      isConfigured: isTelegramConfigured(),
+    },
+  };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -151,7 +171,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function SettingsPage() {
-  const { settings, addToThemeUrl, isProPlan } = useLoaderData<typeof loader>();
+  const { settings, addToThemeUrl, isProPlan, telegram } =
+    useLoaderData<typeof loader>();
   const fetcher = useFetcher<typeof action>();
 
   const shopify = useAppBridge();
@@ -291,6 +312,15 @@ export default function SettingsPage() {
 
         </s-stack>
       </form>
+
+      {/* Deliberately outside the <form data-save-bar> above: this card saves
+          through its own fetcher, and any field inside that form gets pulled
+          into the save bar's dirty-state snapshot. */}
+      <TelegramSection
+        link={telegram.link}
+        botUsername={telegram.botUsername}
+        isConfigured={telegram.isConfigured}
+      />
 
       {/* Must be a direct child of <s-page> (not nested inside the <form>
           above) — slot assignment for web components only picks up

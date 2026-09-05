@@ -4,6 +4,11 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { z } from "zod";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+import {
+  notifyAssistantMessage,
+  notifyHandoffRequested,
+  notifyShopperMessage,
+} from "../telegram.server";
 import { describeRange, withMediaFragment } from "../media-timestamp";
 import {
   countConversationsThisMonth,
@@ -339,6 +344,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     where: { shop_conversationId: { shop: session.shop, conversationId } },
   });
 
+  let conversationRecord = existingConversation;
+
   if (!existingConversation) {
     // Free-plan cap. Counting first keeps this free of an Admin API call for
     // every chat — the subscription is only looked up once a shop is actually
@@ -375,7 +382,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       );
     }
 
-    await prisma.conversation.create({
+    conversationRecord = await prisma.conversation.create({
       data: {
         shop: session.shop,
         conversationId,
@@ -395,6 +402,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         role: "user",
         content: String(lastMessage.content),
       },
+    });
+
+    notifyShopperMessage({
+      shop: session.shop,
+      conversationId,
+      customerName: conversationRecord?.customerName ?? "Shopper",
+      content: String(lastMessage.content),
+      isNewConversation: !existingConversation,
     });
   }
 
@@ -529,6 +544,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             role: "assistant",
             content: text,
           },
+        });
+
+        notifyAssistantMessage({
+          shop: session.shop,
+          conversationId,
+          content: text,
         });
       }
     },
@@ -812,6 +833,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             where: { shop_conversationId: { shop: session.shop, conversationId } },
             data: { needsHuman: true, needsHumanRequestedAt: new Date() },
           });
+
+          notifyHandoffRequested({
+            shop: session.shop,
+            conversationId,
+            customerName: conversationRecord?.customerName ?? "A shopper",
+            reason: reason ?? null,
+          });
+
           return { requested: true, reason: reason ?? null };
         },
       }),

@@ -119,6 +119,38 @@ Models: `Session` (Shopify OAuth sessions, via `PrismaSessionStorage`), `WidgetS
 
 RLS is intentionally left disabled on these tables — access is exclusively via a direct Postgres connection through Prisma (never through Supabase's Data API/anon key), and `chat_widget` is not in this project's exposed Data API schemas.
 
+### Telegram: the push channel, and a second front-end onto the agent reply
+
+Shopify's mobile admin app has no notification for chat-widget conversations,
+so a merchant otherwise only learns a shopper wanted them by opening the app.
+Telegram fills that gap — and it deliberately adds **no new reply mechanism**.
+
+The human-handoff loop already existed: the merchant's admin reply in
+`app.activity_.$conversationId.tsx` writes a `ChatMessage` with `role: "agent"`,
+and the storefront widget polls `apps.chat-widget.messages.tsx` for exactly
+those. A Telegram reply writes the same row, so the shopper sees it with zero
+widget changes. Keep it that way — don't give Telegram its own delivery path.
+
+- **One shared bot serves every shop.** Merchants never touch @BotFather; they
+  generate an `ORBY-XXXXXX` code in Settings and send it to the bot, and
+  `telegram.webhook.tsx` records their `chatId`. All routing is chat-id-based.
+- **`/telegram/webhook` is public and has no Shopify session.** Its *only*
+  authentication is the `X-Telegram-Bot-Api-Secret-Token` header matching
+  `TELEGRAM_WEBHOOK_SECRET`. It also re-checks that the replying chat is still
+  the one linked to that shop, so a stale `TelegramMessageRef` can't write into
+  another store's conversation.
+- **It always returns 200.** Telegram retries any non-2xx indefinitely, so
+  failures are reported back into the chat instead of failing the request.
+- **Sends are fire-and-forget via `waitUntil`.** A Telegram outage must never
+  fail a shopper's chat request. On Vercel a bare floating promise is killed
+  when the response ends, hence `@vercel/functions`' `waitUntil` in
+  `telegram.server.ts`.
+- **Registering the webhook is a manual one-time step** per deployment — see
+  the `setWebhook` curl in `.env.example`. Changing `SHOPIFY_APP_URL` means
+  re-running it.
+- Handoff alerts ignore the merchant's feed-scope setting: that notification is
+  the whole point of the feature.
+
 ### AI tool-calling
 
 Both chat routes use the same pattern: `streamText` from `ai` with a Google Gemini model, a `searchProducts` tool (Zod-validated input, queries `admin.graphql` for live product data), and `stopWhen: stepCountIs(4)`. The system prompt is merchant-configurable (`WidgetSettings.systemPrompt`) and explicitly instructs the model to never invent products/prices — keep that constraint when touching the prompt or tool.
