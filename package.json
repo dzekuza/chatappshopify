@@ -2,7 +2,10 @@
   "name": "ai-chat-widget",
   "private": true,
   "scripts": {
+    "copy:widget": "node scripts/copy-widget-assets.mjs",
+    "prebuild": "npm run copy:widget",
     "build": "prisma generate && prisma migrate deploy && react-router build",
+    "predev": "npm run copy:widget",
     "dev": "shopify app dev",
     "config:link": "shopify app config link",
     "generate": "shopify app generate",

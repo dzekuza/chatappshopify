@@ -20,6 +20,27 @@
 
   var blockSettings = parseBlockSettings();
 
+  // On the Online Store the endpoints above are same-origin, so the chat POST
+  // is a plain JSON request. On a headless storefront (Hydrogen/Oxygen or a
+  // custom build) the widget is embedded by hand and the endpoints point at
+  // the shop's own domain, which makes every call cross-origin — and an
+  // "application/json" POST is not CORS-safelisted, so the browser would fire
+  // a preflight OPTIONS. Shopify doesn't document the app proxy forwarding
+  // OPTIONS, so rather than depend on it, cross-origin sends use the
+  // safelisted "text/plain" instead: Request.json() on the server parses the
+  // body regardless of content type, and no preflight is ever needed.
+  function isCrossOrigin(endpoint) {
+    try {
+      return new URL(endpoint, window.location.href).origin !== window.location.origin;
+    } catch (err) {
+      return false;
+    }
+  }
+
+  var chatContentType = isCrossOrigin(chatEndpoint)
+    ? "text/plain;charset=UTF-8"
+    : "application/json";
+
   // Values the theme-editor block schema always populates (its own
   // "default"), so a block setting only counts as an intentional merchant
   // override when it differs from these — otherwise every shop would get
@@ -1095,7 +1116,7 @@
       try {
         var response = await fetch(chatEndpoint, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": chatContentType },
           body: JSON.stringify({
             messages: history,
             conversationId: conversationId,

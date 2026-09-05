@@ -53,6 +53,12 @@ model WidgetSettings {
   geminiApiKey                String?
   language                    String    @default("auto")
   knowledgeCollections        Json      @default("[]")
+  // Origins of any non-Liquid storefront allowed to call the app-proxy chat
+  // endpoints cross-origin (Hydrogen/Oxygen or a custom headless build). Empty
+  // for an Online Store shop, where the widget is same-origin and CORS never
+  // comes into it. Stored as an array of bare origins, e.g.
+  // ["https://shop.example.com"] — see cors.server.ts.
+  storefrontOrigins           Json      @default("[]")
   convertedCustomersCount     Int?
   convertedCustomersCheckedAt DateTime?
   updatedAt                   DateTime  @updatedAt
@@ -232,5 +238,47 @@ model AiStatus {
   usedOwnKey      Boolean   @default(false)
   updatedAt       DateTime  @updatedAt
 
+  @@schema("chat_widget")
+}
+
+// Links a shop to one Telegram chat so chat activity can be pushed to the
+// merchant's phone. This exists because Shopify's own mobile app has no
+// notification for widget conversations — Telegram is the push channel.
+//
+// A shop first gets a `linkCode`, sends it to the shared Orby bot, and the
+// webhook fills in `chatId`. Nothing is ever sent until `chatId` is set.
+model TelegramLink {
+  id        String    @id @default(cuid())
+  shop      String    @unique
+  // Rotated to a fresh unguessable value the moment it's redeemed, and only
+  // honoured while `linkCodeExpiresAt` is in the future — so a code is
+  // single-use and short-lived, never a standing password for the shop.
+  linkCode           String    @unique
+  linkCodeExpiresAt  DateTime?
+  chatId    String?
+  chatTitle String?
+  linkedAt  DateTime?
+  enabled   Boolean   @default(true)
+  // "all" — every shopper and AI turn; "alerts" — only human-handoff requests.
+  feedScope String    @default("all")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@schema("chat_widget")
+}
+
+// Maps a message the bot posted back to the conversation it came from, so a
+// merchant's native swipe-reply in Telegram can be routed to the right
+// conversation without them typing an id.
+model TelegramMessageRef {
+  id                String   @id @default(cuid())
+  shop              String
+  chatId            String
+  telegramMessageId String
+  conversationId    String
+  createdAt         DateTime @default(now())
+
+  @@unique([chatId, telegramMessageId])
+  @@index([shop, conversationId])
   @@schema("chat_widget")
 }

@@ -39,3 +39,7 @@ database.sqlite
 
 # eslint cache
 .eslintcache
+
+# Copied from extensions/ai-chat-widget/assets at build time by
+# scripts/copy-widget-assets.mjs — never edit or commit these.
+/public/widget/

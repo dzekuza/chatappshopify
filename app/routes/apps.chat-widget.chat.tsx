@@ -4,6 +4,17 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { z } from "zod";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+import {
+  corsHeaders,
+  corsPreflightResponse,
+  resolveStorefrontCorsOrigin,
+  withCors,
+} from "../cors.server";
+import {
+  notifyAssistantMessage,
+  notifyHandoffRequested,
+  notifyShopperMessage,
+} from "../telegram.server";
 import { describeRange, withMediaFragment } from "../media-timestamp";
 import {
   countConversationsThisMonth,
@@ -284,6 +295,10 @@ function knowledgeBasePrompt(entries: KnowledgeEntryRow[]) {
 }
 
 export const action = async ({ request }: ActionFunctionArgs) => {
+  if (request.method === "OPTIONS") {
+    return corsPreflightResponse(request);
+  }
+
   if (request.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
   }
@@ -298,14 +313,25 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     where: { shop: session.shop },
   });
 
+  // Resolved from the row already loaded above. A headless storefront calls
+  // this endpoint cross-origin (see cors.server.ts); every response below has
+  // to carry the header or the shopper sees a generic failure with the real
+  // answer sitting unread in a blocked response.
+  const corsOrigin = await resolveStorefrontCorsOrigin(
+    request,
+    session.shop,
+    settings?.storefrontOrigins,
+  );
+  const cors = (response: Response) => withCors(response, corsOrigin);
+
   if (!settings || !settings.enabled) {
-    return new Response("Chat widget is disabled", { status: 403 });
+    return cors(new Response("Chat widget is disabled", { status: 403 }));
   }
 
   if (!process.env.GEMINI_API_KEY) {
-    return new Response("AI is not configured for this store", {
-      status: 503,
-    });
+    return cors(
+      new Response("AI is not configured for this store", { status: 503 }),
+    );
   }
 
   const body = await request.json();
@@ -327,7 +353,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     .map((m) => ({ role: m.role, content: m.content }) as ModelMessage);
 
   if (messages.length === 0) {
-    return new Response("No message provided", { status: 400 });
+    return cors(new Response("No message provided", { status: 400 }));
   }
 
   const conversationId =
@@ -338,6 +364,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const existingConversation = await prisma.conversation.findUnique({
     where: { shop_conversationId: { shop: session.shop, conversationId } },
   });
+
+  let conversationRecord = existingConversation;
 
   if (!existingConversation) {
     // Free-plan cap. Counting first keeps this free of an Admin API call for
@@ -353,9 +381,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     ) {
       const isPaid = await hasActiveSubscription(admin);
       if (!isPaid) {
-        return new Response(
-          "This store has reached its monthly chat limit. Please contact the store directly.",
-          { status: 402 },
+        return cors(
+          new Response(
+            "This store has reached its monthly chat limit. Please contact the store directly.",
+            { status: 402 },
+          ),
         );
       }
     }
@@ -369,13 +399,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       typeof contact.phone === "string" ? contact.phone.trim() : "";
 
     if (!customerName || (!customerEmail && !customerPhone)) {
-      return new Response(
-        "Name and either an email or phone number are required to start a conversation",
-        { status: 400 },
+      return cors(
+        new Response(
+          "Name and either an email or phone number are required to start a conversation",
+          { status: 400 },
+        ),
       );
     }
 
-    await prisma.conversation.create({
+    conversationRecord = await prisma.conversation.create({
       data: {
         shop: session.shop,
         conversationId,
@@ -395,6 +427,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         role: "user",
         content: String(lastMessage.content),
       },
+    });
+
+    notifyShopperMessage({
+      shop: session.shop,
+      conversationId,
+      customerName: conversationRecord?.customerName ?? "Shopper",
+      content: String(lastMessage.content),
+      isNewConversation: !existingConversation,
     });
   }
 
@@ -529,6 +569,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             role: "assistant",
             content: text,
           },
+        });
+
+        notifyAssistantMessage({
+          shop: session.shop,
+          conversationId,
+          content: text,
         });
       }
     },
@@ -812,6 +858,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             where: { shop_conversationId: { shop: session.shop, conversationId } },
             data: { needsHuman: true, needsHumanRequestedAt: new Date() },
           });
+
+          notifyHandoffRequested({
+            shop: session.shop,
+            conversationId,
+            customerName: conversationRecord?.customerName ?? "A shopper",
+            reason: reason ?? null,
+          });
+
           return { requested: true, reason: reason ?? null };
         },
       }),
@@ -842,7 +896,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     result,
     () => lastProductResults,
     () => navigateTarget,
-    { "X-Conversation-Id": conversationId },
+    { "X-Conversation-Id": conversationId, ...corsHeaders(corsOrigin) },
     async (error) => {
       await recordAiFailure(session.shop, error, usesOwnKey).catch(() => {});
       return AI_UNAVAILABLE_MESSAGE;

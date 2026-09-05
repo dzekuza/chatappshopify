@@ -109,6 +109,14 @@ Despite the global stack defaults, this app's admin (`app/routes/app*.tsx`) uses
 
 ### Storefront widget: vanilla JS/CSS, mirrors the admin preview's visual language deliberately
 
+### Headless storefronts (Hydrogen) get the same widget, embedded by hand
+
+A theme app extension is Online Store only — a Hydrogen/Oxygen (or custom) storefront renders no app embed block, so installing the app leaves the widget invisible. Three pieces make it work there instead:
+
+- **`scripts/copy-widget-assets.mjs`** copies `extensions/ai-chat-widget/assets/*` into `public/widget/` at build time (`prebuild`/`predev`). That directory is gitignored — `extensions/` stays the single source of truth, so never edit `public/widget/` directly.
+- **`app/cors.server.ts`** adds a per-shop origin allowlist (`WidgetSettings.storefrontOrigins`) to every `apps.chat-widget.*` proxy route. The endpoints are called on the shop's `.myshopify.com` domain (the primary domain points at the Hydrogen build and serves no `/apps/*`), so they're cross-origin. The `Origin`-header gate in `resolveStorefrontCorsOrigin` keeps Online Store requests from paying for an extra settings lookup — the messages endpoint is polled every 5s. The widget posts chat with a CORS-safelisted `text/plain` content type when cross-origin so no preflight is needed at all (it isn't documented that Shopify's proxy forwards `OPTIONS`).
+- **`app/headless-embed.server.ts`** generates the copy-paste snippet, surfaced by `HeadlessSection` on the Settings page alongside the origin allowlist. The detected-platform hint reuses `CatalogSync.platform` (see `storefront.server.ts`), not a fresh probe.
+
 `extensions/ai-chat-widget/assets/ai-chat-widget.js` + `.css` render the actual bubble-launcher + expandable panel chat widget shoppers see, injected via `extensions/ai-chat-widget/blocks/chat_widget.liquid` (a theme app extension block, `target: "body"`). It's a self-contained IIFE with no build step or framework — string-built HTML, manual DOM event wiring. There is **no shared code** between this and the admin's React-based chat preview (`app/routes/app._index.tsx` + `app/styles/chat-widget-preview.module.css`); they're kept visually consistent by hand (same class-naming conventions, same header/empty-state/input-bar structure) rather than through a shared component.
 
 ### Database: Prisma → Supabase Postgres, isolated in its own schema
@@ -118,6 +126,44 @@ Despite the global stack defaults, this app's admin (`app/routes/app*.tsx`) uses
 Models: `Session` (Shopify OAuth sessions, via `PrismaSessionStorage`), `WidgetSettings` (one row per shop — widget config), `Conversation` (one per storefront chat, with shopper contact info), `ChatMessage` (individual turns, linked by `conversationId` string, not a FK).
 
 RLS is intentionally left disabled on these tables — access is exclusively via a direct Postgres connection through Prisma (never through Supabase's Data API/anon key), and `chat_widget` is not in this project's exposed Data API schemas.
+
+### Telegram: the push channel, and a second front-end onto the agent reply
+
+Shopify's mobile admin app has no notification for chat-widget conversations,
+so a merchant otherwise only learns a shopper wanted them by opening the app.
+Telegram fills that gap — and it deliberately adds **no new reply mechanism**.
+
+The human-handoff loop already existed: the merchant's admin reply in
+`app.activity_.$conversationId.tsx` writes a `ChatMessage` with `role: "agent"`,
+and the storefront widget polls `apps.chat-widget.messages.tsx` for exactly
+those. A Telegram reply writes the same row, so the shopper sees it with zero
+widget changes. Keep it that way — don't give Telegram its own delivery path.
+
+- **One shared bot serves every shop.** Merchants never touch @BotFather; they
+  generate an `ORBY-XXXXXX` code in Settings and send it to the bot, and
+  `telegram.webhook.tsx` records their `chatId`. All routing is chat-id-based.
+- **`/telegram/webhook` is public and has no Shopify session.** Its *only*
+  authentication is the `X-Telegram-Bot-Api-Secret-Token` header matching
+  `TELEGRAM_WEBHOOK_SECRET`. It also re-checks that the replying chat is still
+  the one linked to that shop, so a stale `TelegramMessageRef` can't write into
+  another store's conversation.
+- **It always returns 200.** Telegram retries any non-2xx indefinitely, so
+  failures are reported back into the chat instead of failing the request.
+- **Sends are fire-and-forget via `waitUntil`.** A Telegram outage must never
+  fail a shopper's chat request. On Vercel a bare floating promise is killed
+  when the response ends, hence `@vercel/functions`' `waitUntil` in
+  `telegram.server.ts`.
+- **Registering the webhook is a manual one-time step** per deployment — see
+  the `setWebhook` curl in `.env.example`. Changing `SHOPIFY_APP_URL` means
+  re-running it.
+- **A link code is a bearer credential**, not a convenience string: whoever
+  sends it to the bot receives that shop's chat activity *and* can reply as the
+  merchant. So it's 50 bits, valid for 15 minutes, and rotated to an unshown
+  value the instant it's redeemed. Don't shorten it or drop the expiry — the
+  expiry check is also what stops a redeemed code being replayed to repoint an
+  already-connected shop's notifications at someone else's chat.
+- Handoff alerts ignore the merchant's feed-scope setting: that notification is
+  the whole point of the feature.
 
 ### AI tool-calling
 
