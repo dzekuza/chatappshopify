@@ -1,6 +1,7 @@
 import type { LoaderFunctionArgs } from "react-router";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+import { resolveStorefrontCorsOrigin, withCors } from "../cors.server";
 
 // Polled by the storefront widget while a chat panel is open so a merchant's
 // admin reply (see app.activity_.$conversationId.tsx) shows up for the
@@ -14,12 +15,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     return new Response("Unauthorized", { status: 401 });
   }
 
+  const corsOrigin = await resolveStorefrontCorsOrigin(request, session.shop);
+
   const url = new URL(request.url);
   const conversationId = url.searchParams.get("conversationId")?.trim();
   const sinceParam = url.searchParams.get("since");
 
   if (!conversationId) {
-    return Response.json({ messages: [] });
+    return withCors(Response.json({ messages: [] }), corsOrigin);
   }
 
   const since = sinceParam ? new Date(sinceParam) : new Date(0);
@@ -35,11 +38,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     take: 50,
   });
 
-  return Response.json({
-    messages: messages.map((m) => ({
-      id: m.id,
-      content: m.content,
-      createdAt: m.createdAt,
-    })),
-  });
+  return withCors(
+    Response.json({
+      messages: messages.map((m) => ({
+        id: m.id,
+        content: m.content,
+        createdAt: m.createdAt,
+      })),
+    }),
+    corsOrigin,
+  );
 };

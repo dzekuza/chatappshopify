@@ -1,0 +1,11 @@
+/* The generated embed snippet is code the merchant copies verbatim, so it has
+   to keep its own line breaks and indentation — s-paragraph collapses both. */
+.snippet {
+  margin: 0;
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre;
+  tab-size: 2;
+}

@@ -109,6 +109,14 @@ Despite the global stack defaults, this app's admin (`app/routes/app*.tsx`) uses
 
 ### Storefront widget: vanilla JS/CSS, mirrors the admin preview's visual language deliberately
 
+### Headless storefronts (Hydrogen) get the same widget, embedded by hand
+
+A theme app extension is Online Store only — a Hydrogen/Oxygen (or custom) storefront renders no app embed block, so installing the app leaves the widget invisible. Three pieces make it work there instead:
+
+- **`scripts/copy-widget-assets.mjs`** copies `extensions/ai-chat-widget/assets/*` into `public/widget/` at build time (`prebuild`/`predev`). That directory is gitignored — `extensions/` stays the single source of truth, so never edit `public/widget/` directly.
+- **`app/cors.server.ts`** adds a per-shop origin allowlist (`WidgetSettings.storefrontOrigins`) to every `apps.chat-widget.*` proxy route. The endpoints are called on the shop's `.myshopify.com` domain (the primary domain points at the Hydrogen build and serves no `/apps/*`), so they're cross-origin. The `Origin`-header gate in `resolveStorefrontCorsOrigin` keeps Online Store requests from paying for an extra settings lookup — the messages endpoint is polled every 5s. The widget posts chat with a CORS-safelisted `text/plain` content type when cross-origin so no preflight is needed at all (it isn't documented that Shopify's proxy forwards `OPTIONS`).
+- **`app/headless-embed.server.ts`** generates the copy-paste snippet, surfaced by `HeadlessSection` on the Settings page alongside the origin allowlist. The detected-platform hint reuses `CatalogSync.platform` (see `storefront.server.ts`), not a fresh probe.
+
 `extensions/ai-chat-widget/assets/ai-chat-widget.js` + `.css` render the actual bubble-launcher + expandable panel chat widget shoppers see, injected via `extensions/ai-chat-widget/blocks/chat_widget.liquid` (a theme app extension block, `target: "body"`). It's a self-contained IIFE with no build step or framework — string-built HTML, manual DOM event wiring. There is **no shared code** between this and the admin's React-based chat preview (`app/routes/app._index.tsx` + `app/styles/chat-widget-preview.module.css`); they're kept visually consistent by hand (same class-naming conventions, same header/empty-state/input-bar structure) rather than through a shared component.
 
 ### Database: Prisma → Supabase Postgres, isolated in its own schema

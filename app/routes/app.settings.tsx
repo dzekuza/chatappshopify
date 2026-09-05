@@ -13,6 +13,10 @@ import { WidgetSection } from "../components/settings/widget-section";
 import { AppearanceSection } from "../components/settings/appearance-section";
 import { AiModelSection } from "../components/settings/ai-model-section";
 import { TelegramSection } from "../components/settings/telegram-section";
+import { HeadlessSection } from "../components/settings/headless-section";
+import { buildHeadlessEmbed } from "../headless-embed.server";
+import { parseStorefrontOrigins } from "../cors.server";
+import type { StorefrontPlatform } from "../storefront.server";
 import { isTelegramConfigured, telegramBotUsername } from "../telegram.server";
 import type { KnowledgeCollection } from "../components/settings/knowledge-sync-section";
 import type { WidgetSettings } from "@prisma/client";
@@ -52,23 +56,44 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   // The DB upsert and the Shopify billing check don't depend on each
   // other's result — running them concurrently instead of sequentially
   // roughly halves this loader's critical path.
-  const [settings, { appSubscriptions }, telegramLink] = await Promise.all([
-    prisma.widgetSettings.upsert({
-      where: { shop: session.shop },
-      update: {},
-      create: { shop: session.shop },
-    }),
-    billing.check({ plans: [MONTHLY_PLAN, PRO_PLAN] }),
-    prisma.telegramLink.findUnique({ where: { shop: session.shop } }),
-  ]);
+  const [settings, { appSubscriptions }, telegramLink, catalogSync] =
+    await Promise.all([
+      prisma.widgetSettings.upsert({
+        where: { shop: session.shop },
+        update: {},
+        create: { shop: session.shop },
+      }),
+      billing.check({ plans: [MONTHLY_PLAN, PRO_PLAN] }),
+      prisma.telegramLink.findUnique({ where: { shop: session.shop } }),
+      // Only for the detected-platform hint on the headless card — the
+      // catalogue sync already probes the storefront and records how it's
+      // built (see storefront.server.ts), so nothing extra has to be fetched
+      // from Shopify to know whether this shop even has a theme.
+      prisma.catalogSync.findUnique({
+        where: { shop: session.shop },
+        select: { platform: true },
+      }),
+    ]);
   const isProPlan = appSubscriptions.some((sub) => sub.name === PRO_PLAN);
 
   const addToThemeUrl = `https://${session.shop}/admin/themes/current/editor?context=apps&activateAppId=${process.env.SHOPIFY_API_KEY}/${THEME_BLOCK_HANDLE}`;
+
+  const detectedPlatform: StorefrontPlatform =
+    catalogSync?.platform === "headless"
+      ? "headless"
+      : catalogSync?.platform === "online-store"
+        ? "online-store"
+        : "unknown";
 
   return {
     settings,
     addToThemeUrl,
     isProPlan,
+    headless: {
+      embed: buildHeadlessEmbed(session.shop, process.env.SHOPIFY_APP_URL ?? ""),
+      storefrontOrigins: parseStorefrontOrigins(settings.storefrontOrigins),
+      detectedPlatform,
+    },
     telegram: {
       link: telegramLink
         ? {
@@ -173,7 +198,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function SettingsPage() {
-  const { settings, addToThemeUrl, isProPlan, telegram } =
+  const { settings, addToThemeUrl, isProPlan, telegram, headless } =
     useLoaderData<typeof loader>();
   const fetcher = useFetcher<typeof action>();
 
@@ -315,9 +340,15 @@ export default function SettingsPage() {
         </s-stack>
       </form>
 
-      {/* Deliberately outside the <form data-save-bar> above: this card saves
-          through its own fetcher, and any field inside that form gets pulled
-          into the save bar's dirty-state snapshot. */}
+      {/* Both of these are deliberately outside the <form data-save-bar>
+          above: they save through their own fetchers, and any field inside
+          that form gets pulled into the save bar's dirty-state snapshot. */}
+      <HeadlessSection
+        embed={headless.embed}
+        storefrontOrigins={headless.storefrontOrigins}
+        detectedPlatform={headless.detectedPlatform}
+      />
+
       <TelegramSection
         link={telegram.link}
         botUsername={telegram.botUsername}
@@ -331,7 +362,10 @@ export default function SettingsPage() {
         <s-stack direction="block" gap="base">
           <s-paragraph>
             Click &ldquo;Add to theme&rdquo; above to open the theme editor with the AI
-            Chat Widget block ready to enable on your storefront.
+            Chat Widget block ready to enable on your storefront. On a headless
+            storefront (Hydrogen, Oxygen, or your own framework) use the
+            &ldquo;Headless storefront&rdquo; card instead — the theme editor
+            has nothing to add the widget to.
           </s-paragraph>
           <s-paragraph>
             The Gemini API key is configured via the{" "}

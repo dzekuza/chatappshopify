@@ -1,6 +1,11 @@
 import type { ActionFunctionArgs } from "react-router";
 import { authenticate } from "../shopify.server";
 import {
+  corsPreflightResponse,
+  resolveStorefrontCorsOrigin,
+  withCors,
+} from "../cors.server";
+import {
   isFileUploadAccessDeniedError,
   uploadImageToShopifyFiles,
 } from "../shopify-file-upload.server";
@@ -15,6 +20,10 @@ import {
 const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 
 export const action = async ({ request }: ActionFunctionArgs) => {
+  if (request.method === "OPTIONS") {
+    return corsPreflightResponse(request);
+  }
+
   if (request.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
   }
@@ -25,22 +34,29 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return new Response("Unauthorized", { status: 401 });
   }
 
+  const corsOrigin = await resolveStorefrontCorsOrigin(request, session.shop);
+  const cors = (response: Response) => withCors(response, corsOrigin);
+
   const formData = await request.formData();
   const file = formData.get("file");
 
   if (!(file instanceof File)) {
-    return Response.json({ error: "No file provided." }, { status: 400 });
+    return cors(Response.json({ error: "No file provided." }, { status: 400 }));
   }
   if (!file.type.startsWith("image/")) {
-    return Response.json(
-      { error: "Only image attachments are supported." },
-      { status: 400 },
+    return cors(
+      Response.json(
+        { error: "Only image attachments are supported." },
+        { status: 400 },
+      ),
     );
   }
   if (file.size > MAX_ATTACHMENT_BYTES) {
-    return Response.json(
-      { error: "Image must be smaller than 5MB." },
-      { status: 400 },
+    return cors(
+      Response.json(
+        { error: "Image must be smaller than 5MB." },
+        { status: 400 },
+      ),
     );
   }
 
@@ -51,21 +67,27 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       "Shopper chat attachment",
     );
     if (!result.ok) {
-      return Response.json({ error: result.error }, { status: result.status });
+      return cors(
+        Response.json({ error: result.error }, { status: result.status }),
+      );
     }
-    return Response.json({ url: result.url });
+    return cors(Response.json({ url: result.url }));
   } catch (error) {
     if (error instanceof Response) throw error;
     if (isFileUploadAccessDeniedError(error)) {
-      return Response.json(
-        { error: "Attachments aren't available for this store right now." },
-        { status: 403 },
+      return cors(
+        Response.json(
+          { error: "Attachments aren't available for this store right now." },
+          { status: 403 },
+        ),
       );
     }
     console.error("Chat attachment upload failed", error);
-    return Response.json(
-      { error: "Uploading the image failed." },
-      { status: 502 },
+    return cors(
+      Response.json(
+        { error: "Uploading the image failed." },
+        { status: 502 },
+      ),
     );
   }
 };

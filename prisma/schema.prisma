@@ -53,6 +53,12 @@ model WidgetSettings {
   geminiApiKey                String?
   language                    String    @default("auto")
   knowledgeCollections        Json      @default("[]")
+  // Origins of any non-Liquid storefront allowed to call the app-proxy chat
+  // endpoints cross-origin (Hydrogen/Oxygen or a custom headless build). Empty
+  // for an Online Store shop, where the widget is same-origin and CORS never
+  // comes into it. Stored as an array of bare origins, e.g.
+  // ["https://shop.example.com"] — see cors.server.ts.
+  storefrontOrigins           Json      @default("[]")
   convertedCustomersCount     Int?
   convertedCustomersCheckedAt DateTime?
   updatedAt                   DateTime  @updatedAt
