@@ -61,7 +61,10 @@ export function KnowledgeEntriesTable({
   }
 
   return (
-    <s-section heading="Store FAQs" padding="none">
+    <s-section padding="none">
+      <s-box paddingInline="base" paddingBlockStart="base">
+        <s-heading>Store FAQs</s-heading>
+      </s-box>
       <s-table variant="auto">
         <s-table-header-row>
           <s-table-header listSlot="primary">Question</s-table-header>
