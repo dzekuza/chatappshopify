@@ -1,6 +1,6 @@
 import type { ActionFunctionArgs } from "react-router";
 import prisma from "../db.server";
-import { sendTelegramMessage } from "../telegram.server";
+import { generateLinkCode, sendTelegramMessage } from "../telegram.server";
 
 // Public endpoint hit by Telegram — there is no Shopify session here. It is
 // authenticated by the secret token Telegram echoes back in a header, which
@@ -17,7 +17,7 @@ import { sendTelegramMessage } from "../telegram.server";
 // Telegram retries any non-2xx indefinitely, so failures are reported back
 // into the chat and the request itself always succeeds.
 
-const LINK_CODE_PATTERN = /\bORBY-[A-Z0-9]{6}\b/;
+const LINK_CODE_PATTERN = /\bORBY-[A-Z0-9]{10}\b/;
 
 type TelegramUpdate = {
   message?: {
@@ -131,17 +131,33 @@ async function handleLink(
     where: { linkCode: code },
   });
 
-  if (!link) {
+  // A code is only live inside its window. Redeeming one clears the expiry
+  // (below), so this single check also rejects replaying a code against an
+  // already-connected shop — which would otherwise repoint that store's
+  // notifications at the sender's chat and hand them reply access.
+  const isRedeemable =
+    link?.linkCodeExpiresAt && link.linkCodeExpiresAt.getTime() > Date.now();
+
+  if (!link || !isRedeemable) {
     await sendTelegramMessage(
       chat,
-      "That code isn't valid. Generate a fresh one on the app's Settings page.",
+      "That code isn't valid or has expired. Generate a fresh one on the app's Settings page.",
     );
     return;
   }
 
   await prisma.telegramLink.update({
     where: { id: link.id },
-    data: { chatId: chat, chatTitle, linkedAt: new Date(), enabled: true },
+    data: {
+      chatId: chat,
+      chatTitle,
+      linkedAt: new Date(),
+      enabled: true,
+      // Burn it: rotate to a value never shown to anyone, so the code the
+      // merchant just sent over Telegram can't be reused by whoever sees it.
+      linkCode: generateLinkCode(),
+      linkCodeExpiresAt: null,
+    },
   });
 
   await sendTelegramMessage(

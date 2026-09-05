@@ -3,6 +3,7 @@ import { useEffect } from "react";
 
 export type TelegramLinkState = {
   linkCode: string;
+  linkCodeExpiresAt: string | null;
   chatId: string | null;
   chatTitle: string | null;
   enabled: boolean;
@@ -30,11 +31,14 @@ export function TelegramSection({
   // The chat id is filled in by Telegram's webhook, not by this page, so the
   // loader data only catches up once something re-runs it.
   useEffect(() => {
-    if (link?.linkCode && !link.chatId) {
+    const stillRedeemable =
+      link?.linkCodeExpiresAt &&
+      new Date(link.linkCodeExpiresAt).getTime() > Date.now();
+    if (stillRedeemable && !link?.chatId) {
       const timer = setInterval(() => revalidator.revalidate(), 4000);
       return () => clearInterval(timer);
     }
-  }, [link?.linkCode, link?.chatId, revalidator]);
+  }, [link?.linkCodeExpiresAt, link?.chatId, revalidator]);
 
   if (!isConfigured) {
     return (
@@ -75,20 +79,30 @@ export function TelegramSection({
   }
 
   if (!link.chatId) {
-    const deepLink = botUsername
-      ? `https://t.me/${botUsername}?start=${link.linkCode}`
-      : null;
+    const isExpired =
+      !link.linkCodeExpiresAt ||
+      new Date(link.linkCodeExpiresAt).getTime() <= Date.now();
+    const deepLink =
+      botUsername && !isExpired
+        ? `https://t.me/${botUsername}?start=${link.linkCode}`
+        : null;
 
     return (
       <s-section heading="Telegram notifications">
         <s-stack direction="block" gap="base">
           <s-paragraph>
             Open the bot in Telegram and send it this code to finish
-            connecting:
+            connecting. It works once, and only for the next 15 minutes.
           </s-paragraph>
-          <s-box padding="base" background="subdued" borderRadius="base">
-            <s-text type="strong">{link.linkCode}</s-text>
-          </s-box>
+          {isExpired ? (
+            <s-banner tone="warning" heading="This code has expired">
+              <s-paragraph>Generate a new one to carry on.</s-paragraph>
+            </s-banner>
+          ) : (
+            <s-box padding="base" background="subdued" borderRadius="base">
+              <s-text type="strong">{link.linkCode}</s-text>
+            </s-box>
+          )}
           <s-stack direction="inline" gap="base">
             {deepLink ? (
               <s-button variant="primary" href={deepLink} target="_blank" icon="external">
@@ -114,9 +128,11 @@ export function TelegramSection({
               Cancel
             </s-button>
           </s-stack>
-          <s-text color="subdued">
-            Waiting for the code — this page updates itself once it arrives.
-          </s-text>
+          {isExpired ? null : (
+            <s-text color="subdued">
+              Waiting for the code — this page updates itself once it arrives.
+            </s-text>
+          )}
         </s-stack>
       </s-section>
     );

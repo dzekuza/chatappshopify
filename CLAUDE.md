@@ -148,6 +148,12 @@ widget changes. Keep it that way — don't give Telegram its own delivery path.
 - **Registering the webhook is a manual one-time step** per deployment — see
   the `setWebhook` curl in `.env.example`. Changing `SHOPIFY_APP_URL` means
   re-running it.
+- **A link code is a bearer credential**, not a convenience string: whoever
+  sends it to the bot receives that shop's chat activity *and* can reply as the
+  merchant. So it's 50 bits, valid for 15 minutes, and rotated to an unshown
+  value the instant it's redeemed. Don't shorten it or drop the expiry — the
+  expiry check is also what stops a redeemed code being replayed to repoint an
+  already-connected shop's notifications at someone else's chat.
 - Handoff alerts ignore the merchant's feed-scope setting: that notification is
   the whole point of the feature.
 

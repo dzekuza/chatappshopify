@@ -73,6 +73,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       link: telegramLink
         ? {
             linkCode: telegramLink.linkCode,
+            linkCodeExpiresAt:
+              telegramLink.linkCodeExpiresAt?.toISOString() ?? null,
             chatId: telegramLink.chatId,
             chatTitle: telegramLink.chatTitle,
             enabled: telegramLink.enabled,

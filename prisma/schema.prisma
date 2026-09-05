@@ -244,7 +244,11 @@ model AiStatus {
 model TelegramLink {
   id        String    @id @default(cuid())
   shop      String    @unique
-  linkCode  String    @unique
+  // Rotated to a fresh unguessable value the moment it's redeemed, and only
+  // honoured while `linkCodeExpiresAt` is in the future — so a code is
+  // single-use and short-lived, never a standing password for the shop.
+  linkCode           String    @unique
+  linkCodeExpiresAt  DateTime?
   chatId    String?
   chatTitle String?
   linkedAt  DateTime?

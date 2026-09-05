@@ -1,23 +1,16 @@
 import type { ActionFunctionArgs } from "react-router";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import { TELEGRAM_SCOPES, type TelegramScope } from "../telegram.server";
+import {
+  generateLinkCode,
+  linkCodeExpiry,
+  TELEGRAM_SCOPES,
+  type TelegramScope,
+} from "../telegram.server";
 
 // Mutations for the Telegram notification card on the Settings page. Kept out
 // of app.settings.tsx's action because that one saves the whole widget-settings
 // form as a single JSON payload, and connecting a chat isn't a form field.
-
-// Excludes I/O/0/1 so a merchant retyping a code off their screen can't
-// produce a near-miss.
-const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-
-function generateLinkCode() {
-  const bytes = crypto.getRandomValues(new Uint8Array(6));
-  const body = Array.from(bytes)
-    .map((b) => CODE_ALPHABET[b % CODE_ALPHABET.length])
-    .join("");
-  return `ORBY-${body}`;
-}
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -31,12 +24,17 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       where: { shop: session.shop },
       update: {
         linkCode: generateLinkCode(),
+        linkCodeExpiresAt: linkCodeExpiry(),
         chatId: null,
         chatTitle: null,
         linkedAt: null,
         enabled: true,
       },
-      create: { shop: session.shop, linkCode: generateLinkCode() },
+      create: {
+        shop: session.shop,
+        linkCode: generateLinkCode(),
+        linkCodeExpiresAt: linkCodeExpiry(),
+      },
     });
     return Response.json({ ok: true, linkCode: link.linkCode });
   }

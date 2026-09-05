@@ -14,6 +14,32 @@ const API_BASE = "https://api.telegram.org/bot";
 export const TELEGRAM_SCOPES = ["all", "alerts"] as const;
 export type TelegramScope = (typeof TELEGRAM_SCOPES)[number];
 
+// A link code is a bearer credential: whoever sends it to the bot receives
+// that shop's chat activity and can reply as the merchant. Excludes I/O/0/1 so
+// a merchant reading it off their screen can't produce a near-miss.
+const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+// 10 characters over a 32-character alphabet is 50 bits. The bot is the only
+// way to redeem a code and Telegram throttles a spamming client, so 50 bits
+// plus the 15-minute window below puts brute force far out of reach — while
+// staying short enough to read aloud. Most merchants never type it at all:
+// the Settings card offers a one-tap t.me deep link.
+const CODE_LENGTH = 10;
+
+export const LINK_CODE_TTL_MS = 15 * 60 * 1000;
+
+export function generateLinkCode() {
+  const bytes = crypto.getRandomValues(new Uint8Array(CODE_LENGTH));
+  const body = Array.from(bytes)
+    .map((b) => CODE_ALPHABET[b % CODE_ALPHABET.length])
+    .join("");
+  return `ORBY-${body}`;
+}
+
+export function linkCodeExpiry() {
+  return new Date(Date.now() + LINK_CODE_TTL_MS);
+}
+
 export function isTelegramConfigured() {
   return Boolean(process.env.TELEGRAM_BOT_TOKEN);
 }
