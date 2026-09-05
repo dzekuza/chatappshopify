@@ -44,6 +44,23 @@ export function isTelegramConfigured() {
   return Boolean(process.env.TELEGRAM_BOT_TOKEN);
 }
 
+/**
+ * The feature needs three env vars, and each one fails somewhere the Settings
+ * page can't see: a missing bot token throws inside a background send, a
+ * missing webhook secret makes routes/telegram.webhook.tsx 401 every update
+ * from Telegram, and a missing bot username silently drops the one-tap deep
+ * link. Half-configured therefore looks identical to "the merchant hasn't
+ * opened Telegram yet", so report what's missing instead of guessing from the
+ * token alone.
+ */
+export function telegramMissingConfig() {
+  const missing: string[] = [];
+  if (!process.env.TELEGRAM_BOT_TOKEN) missing.push("TELEGRAM_BOT_TOKEN");
+  if (!process.env.TELEGRAM_WEBHOOK_SECRET) missing.push("TELEGRAM_WEBHOOK_SECRET");
+  if (!process.env.TELEGRAM_BOT_USERNAME) missing.push("TELEGRAM_BOT_USERNAME");
+  return missing;
+}
+
 export function telegramBotUsername() {
   return process.env.TELEGRAM_BOT_USERNAME ?? null;
 }

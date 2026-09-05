@@ -17,7 +17,7 @@ import { HeadlessSection } from "../components/settings/headless-section";
 import { buildHeadlessEmbed } from "../headless-embed.server";
 import { parseStorefrontOrigins } from "../cors.server";
 import type { StorefrontPlatform } from "../storefront.server";
-import { isTelegramConfigured, telegramBotUsername } from "../telegram.server";
+import { telegramBotUsername, telegramMissingConfig } from "../telegram.server";
 import type { KnowledgeCollection } from "../components/settings/knowledge-sync-section";
 import type { WidgetSettings } from "@prisma/client";
 import { FREE_TIER_DEFAULT_MODEL } from "../gemini-model.server";
@@ -107,7 +107,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           }
         : null,
       botUsername: telegramBotUsername(),
-      isConfigured: isTelegramConfigured(),
+      missingConfig: telegramMissingConfig(),
     },
   };
 };
@@ -352,7 +352,7 @@ export default function SettingsPage() {
       <TelegramSection
         link={telegram.link}
         botUsername={telegram.botUsername}
-        isConfigured={telegram.isConfigured}
+        missingConfig={telegram.missingConfig}
       />
 
       {/* Must be a direct child of <s-page> (not nested inside the <form>

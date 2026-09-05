@@ -1,5 +1,5 @@
 import { useFetcher, useRevalidator } from "react-router";
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export type TelegramLinkState = {
   linkCode: string;
@@ -13,8 +13,15 @@ export type TelegramLinkState = {
 export type TelegramSectionProps = {
   link: TelegramLinkState;
   botUsername: string | null;
-  isConfigured: boolean;
+  /** Env vars the deploy is missing — see telegramMissingConfig(). */
+  missingConfig: string[];
 };
+
+// How long a code can sit unredeemed before the waiting state stops looking
+// like patience and starts looking like a broken webhook. Well under the
+// 15-minute code expiry, and long enough that a merchant walking to their
+// phone doesn't trip it.
+const STALE_WAIT_MS = 60_000;
 
 // Telegram is the app's push channel: Shopify's mobile admin has no
 // notification for widget conversations, so without this a merchant only
@@ -22,11 +29,22 @@ export type TelegramSectionProps = {
 export function TelegramSection({
   link,
   botUsername,
-  isConfigured,
+  missingConfig,
 }: TelegramSectionProps) {
   const fetcher = useFetcher();
   const revalidator = useRevalidator();
   const isBusy = fetcher.state !== "idle";
+  const [now, setNow] = useState(() => Date.now());
+
+  // When this browser first saw an unredeemed code. Derived here rather than
+  // from the expiry so the 15-minute TTL doesn't have to be duplicated
+  // client-side, where it would drift from telegram.server.ts.
+  const waitingSince = useRef<number | null>(null);
+  if (link && !link.chatId) {
+    waitingSince.current ??= Date.now();
+  } else {
+    waitingSince.current = null;
+  }
 
   // The chat id is filled in by Telegram's webhook, not by this page, so the
   // loader data only catches up once something re-runs it.
@@ -35,12 +53,18 @@ export function TelegramSection({
       link?.linkCodeExpiresAt &&
       new Date(link.linkCodeExpiresAt).getTime() > Date.now();
     if (stillRedeemable && !link?.chatId) {
-      const timer = setInterval(() => revalidator.revalidate(), 4000);
+      const timer = setInterval(() => {
+        setNow(Date.now());
+        revalidator.revalidate();
+      }, 4000);
       return () => clearInterval(timer);
     }
   }, [link?.linkCodeExpiresAt, link?.chatId, revalidator]);
 
-  if (!isConfigured) {
+  // A missing bot token is fatal — nothing can be sent or received — so it
+  // stays a dead end. The other two produce a card that looks like it works
+  // and quietly never links, which is worse, hence the banner above it.
+  if (missingConfig.includes("TELEGRAM_BOT_TOKEN")) {
     return (
       <s-section heading="Telegram notifications">
         <s-banner tone="info" heading="Not available yet">
@@ -54,10 +78,24 @@ export function TelegramSection({
     );
   }
 
+  const configBanner = missingConfig.length ? (
+    <s-banner tone="warning" heading="This app is only half set up">
+      <s-paragraph>
+        {missingConfig.includes("TELEGRAM_WEBHOOK_SECRET")
+          ? "Without TELEGRAM_WEBHOOK_SECRET the app rejects everything Telegram sends it, so a code can never finish connecting."
+          : "Without TELEGRAM_BOT_USERNAME there's no one-tap link to the bot — the code has to be sent by hand."}
+      </s-paragraph>
+      <s-paragraph>
+        Missing: <s-text type="strong">{missingConfig.join(", ")}</s-text>
+      </s-paragraph>
+    </s-banner>
+  ) : null;
+
   if (!link) {
     return (
       <s-section heading="Telegram notifications">
         <s-stack direction="block" gap="base">
+          {configBanner}
           <s-paragraph>
             Get chat activity pushed to your phone, and reply to shoppers
             straight from Telegram. Shopify&rsquo;s mobile app doesn&rsquo;t
@@ -82,6 +120,9 @@ export function TelegramSection({
     const isExpired =
       !link.linkCodeExpiresAt ||
       new Date(link.linkCodeExpiresAt).getTime() <= Date.now();
+    const isStale =
+      waitingSince.current !== null &&
+      now - waitingSince.current >= STALE_WAIT_MS;
     const deepLink =
       botUsername && !isExpired
         ? `https://t.me/${botUsername}?start=${link.linkCode}`
@@ -90,6 +131,7 @@ export function TelegramSection({
     return (
       <s-section heading="Telegram notifications">
         <s-stack direction="block" gap="base">
+          {configBanner}
           <s-paragraph>
             Open the bot in Telegram and send it this code to finish
             connecting. It works once, and only for the next 15 minutes.
@@ -128,7 +170,18 @@ export function TelegramSection({
               Cancel
             </s-button>
           </s-stack>
-          {isExpired ? null : (
+          {isExpired ? null : isStale ? (
+            <s-banner tone="warning" heading="Still waiting">
+              <s-paragraph>
+                Nothing has come back from Telegram yet. If you&rsquo;ve already
+                sent the code, the bot most likely isn&rsquo;t pointed at this
+                app — check that its webhook is registered against this
+                app&rsquo;s URL and that{" "}
+                <s-text type="strong">TELEGRAM_WEBHOOK_SECRET</s-text> matches
+                the secret it was registered with.
+              </s-paragraph>
+            </s-banner>
+          ) : (
             <s-text color="subdued">
               Waiting for the code — this page updates itself once it arrives.
             </s-text>
@@ -141,6 +194,7 @@ export function TelegramSection({
   return (
     <s-section heading="Telegram notifications">
       <s-stack direction="block" gap="base">
+        {configBanner}
         <s-stack direction="inline" gap="small-200" alignItems="center">
           <s-badge tone={link.enabled ? "success" : "caution"}>
             {link.enabled ? "Connected" : "Paused"}
