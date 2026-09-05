@@ -30,7 +30,9 @@ type TelegramUpdate = {
 
 const HELP =
   "Send the link code from your Orby chat app settings to connect this chat.\n\n" +
-  "Once connected, reply to any shopper message here and it goes straight back into their chat on your store.";
+  "Once connected, reply to any shopper message here and it goes straight back into their chat on your store.\n\n" +
+  "/status — show which store this chat is connected to\n" +
+  "/stop — pause notifications";
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   if (request.method !== "POST") {
@@ -87,6 +89,23 @@ async function handleMessage(input: {
 }) {
   const { chat, text } = input;
 
+  if (text === "/status") {
+    const link = await prisma.telegramLink.findFirst({ where: { chatId: chat } });
+    await sendTelegramMessage(
+      chat,
+      link
+        ? [
+            link.enabled
+              ? "✅ <b>Connected</b>"
+              : "⏸ <b>Connected, notifications paused</b>",
+            "",
+            await storeSummary(link.shop),
+          ].join("\n")
+        : "This chat isn't connected to a store yet. Send the link code from the app's Settings page.",
+    );
+    return;
+  }
+
   if (text === "/stop") {
     const updated = await prisma.telegramLink.updateMany({
       where: { chatId: chat },
@@ -120,6 +139,30 @@ async function handleMessage(input: {
       ? "To answer a shopper, swipe-reply to their message above rather than sending a new one."
       : HELP,
   );
+}
+
+function scopeLabel(feedScope: string) {
+  return feedScope === "alerts"
+    ? "Only when a shopper asks for a human"
+    : "Every message";
+}
+
+// What the merchant needs to confirm they've connected the right store, from
+// data already in this app's own tables — no Admin API call, so it can't fail
+// or stall the reply.
+async function storeSummary(shop: string) {
+  const [settings, link, conversations] = await Promise.all([
+    prisma.widgetSettings.findUnique({ where: { shop } }),
+    prisma.telegramLink.findUnique({ where: { shop } }),
+    prisma.conversation.count({ where: { shop } }),
+  ]);
+
+  return [
+    `🏪 Store: <b>${shop}</b>`,
+    `💬 Widget: ${settings?.enabled === false ? "Turned off" : "Live"}`,
+    `📣 Sending: ${scopeLabel(link?.feedScope ?? "all")}`,
+    `🗂 Conversations so far: ${conversations}`,
+  ].join("\n");
 }
 
 async function handleLink(
@@ -162,7 +205,15 @@ async function handleLink(
 
   await sendTelegramMessage(
     chat,
-    `✅ Connected to <b>${link.shop}</b>.\n\nYou'll get chat activity here. Reply to any shopper message to answer it.`,
+    [
+      "✅ <b>Code accepted</b> — this chat is now connected.",
+      "",
+      await storeSummary(link.shop),
+      "",
+      "Chat activity will start arriving here. To answer a shopper, swipe-reply to their message.",
+      "",
+      "Wrong store? Send /stop to pause, then disconnect from the app's Settings page.",
+    ].join("\n"),
   );
 }
 
