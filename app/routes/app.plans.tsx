@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import type { LoaderFunctionArgs } from "react-router";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { redirect, useLoaderData, useNavigation, useSearchParams } from "react-router";
 import {
   authenticate,
@@ -13,8 +13,10 @@ import {
   FREE_PLAN_MONTHLY_CONVERSATIONS,
   hasUnlimitedConversations,
 } from "../billing.server";
+import { redeemPlanCode } from "../plan.server";
 import { PlanCard, type Plan } from "../components/plans/plan-card";
 import { UsageStatus } from "../components/plans/usage-status";
+import { PlanCodeRedeem } from "../components/plans/plan-code-redeem";
 import { getAiHealth, type AiHealth } from "../ai-status.server";
 import prisma from "../db.server";
 
@@ -24,6 +26,7 @@ const UNKNOWN_USAGE = {
   conversationsThisMonth: 0,
   unlimited: false,
   usesOwnKey: false,
+  planOverride: null as string | null,
   aiHealth: { ok: true, heading: null, detail: null } as Pick<
     AiHealth,
     "ok" | "heading" | "detail"
@@ -35,7 +38,7 @@ async function loadUsage(shop: string) {
     countConversationsThisMonth(shop),
     prisma.widgetSettings.findUnique({
       where: { shop },
-      select: { geminiApiKey: true },
+      select: { geminiApiKey: true, planOverride: true },
     }),
     getAiHealth(shop),
   ]);
@@ -43,6 +46,7 @@ async function loadUsage(shop: string) {
     conversationsThisMonth,
     unlimited: hasUnlimitedConversations(shop),
     usesOwnKey: Boolean(settings?.geminiApiKey),
+    planOverride: settings?.planOverride ?? null,
     aiHealth: {
       ok: aiHealth.ok,
       heading: aiHealth.heading,
@@ -107,7 +111,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       billing.check({ plans: [SERVER_MONTHLY_PLAN, SERVER_PRO_PLAN] }),
       loadUsage(session.shop),
     ]);
-    const currentPlan = appSubscriptions[0]?.name ?? null;
+    // A redeemed unlock code (see plan.server.ts) counts as the shop's plan
+    // the same as a real subscription would, when there isn't one already.
+    const currentPlan = appSubscriptions[0]?.name ?? usage.planOverride ?? null;
 
     return {
       confirmationUrl: null,
@@ -128,6 +134,23 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       ...UNKNOWN_USAGE,
     };
   }
+};
+
+export const action = async ({ request }: ActionFunctionArgs) => {
+  const { session } = await authenticate.admin(request);
+  const payload = await request.json();
+  const code = String(payload?.code ?? "").trim();
+
+  if (!code) {
+    return Response.json({ ok: false, error: "Enter a code." }, { status: 400 });
+  }
+
+  const result = await redeemPlanCode(session.shop, code);
+  if ("error" in result) {
+    return Response.json({ ok: false, error: result.error }, { status: 400 });
+  }
+
+  return Response.json({ ok: true, plan: result.plan });
 };
 
 // Plain string literals, not the ../shopify.server import above — that import
@@ -270,6 +293,8 @@ export default function Plans() {
           />
         </s-stack>
       </s-section>
+
+      <PlanCodeRedeem />
     </s-page>
   );
 }

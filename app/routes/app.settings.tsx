@@ -76,7 +76,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         select: { platform: true },
       }),
     ]);
-  const isProPlan = appSubscriptions.some((sub) => sub.name === PRO_PLAN);
+  const isProPlan =
+    appSubscriptions.some((sub) => sub.name === PRO_PLAN) ||
+    settings.planOverride === PRO_PLAN;
 
   const addToThemeUrl = `https://${session.shop}/admin/themes/current/editor?context=apps&activateAppId=${process.env.SHOPIFY_API_KEY}/${THEME_BLOCK_HANDLE}`;
 
@@ -122,10 +124,16 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const { session, billing } = await authenticate.admin(request);
   const payload = await request.json();
 
-  const { appSubscriptions } = await billing.check({
-    plans: [MONTHLY_PLAN, PRO_PLAN],
-  });
-  const isProPlan = appSubscriptions.some((sub) => sub.name === PRO_PLAN);
+  const [{ appSubscriptions }, existing] = await Promise.all([
+    billing.check({ plans: [MONTHLY_PLAN, PRO_PLAN] }),
+    prisma.widgetSettings.findUnique({
+      where: { shop: session.shop },
+      select: { planOverride: true },
+    }),
+  ]);
+  const isProPlan =
+    appSubscriptions.some((sub) => sub.name === PRO_PLAN) ||
+    existing?.planOverride === PRO_PLAN;
 
   const enabled = Boolean(payload.enabled);
   const welcomeMessage = String(payload.welcomeMessage ?? "").trim();

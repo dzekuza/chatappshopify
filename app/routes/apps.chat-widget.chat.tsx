@@ -405,7 +405,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       conversationsThisMonth >= FREE_PLAN_MONTHLY_CONVERSATIONS &&
       !hasUnlimitedConversations(session.shop)
     ) {
-      const isPaid = await hasActiveSubscription(admin);
+      // A redeemed unlock code (see plan.server.ts) counts as paid the same
+      // as a real Shopify subscription — both Monthly and Pro plan include
+      // unlimited conversations.
+      const isPaid = Boolean(settings.planOverride) || (await hasActiveSubscription(admin));
       if (!isPaid) {
         return cors(
           new Response(

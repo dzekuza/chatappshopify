@@ -70,6 +70,13 @@ model WidgetSettings {
   proactiveRules              Json      @default("[]")
   convertedCustomersCount     Int?
   convertedCustomersCheckedAt DateTime?
+  // Set when the merchant redeems a secret unlock code on the Plans page
+  // (see plan.server.ts) instead of paying through Shopify Billing — for
+  // beta testers, partners, and promo unlocks. Value is a plan name
+  // ("Monthly Plan"/"Pro Plan", see shopify.server.ts), treated everywhere a
+  // real Shopify subscription of that name would be.
+  planOverride                String?
+  planOverrideRedeemedAt      DateTime?
   updatedAt                   DateTime  @updatedAt
 
   @@schema("chat_widget")
