@@ -32,19 +32,21 @@ export type StreamErrorHandler = (error: unknown) => Promise<string> | string;
 
 function buildSentinelStream(
   source: ReadableStream<string>,
-  getTrailer: () => string,
+  getTrailer: (fullText: string) => string,
   onStreamError?: StreamErrorHandler,
 ) {
   return new ReadableStream<Uint8Array>({
     async start(controller) {
       const encoder = new TextEncoder();
       const reader = source.getReader();
+      let fullText = "";
       try {
         try {
           // eslint-disable-next-line no-constant-condition
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
+            fullText += value;
             controller.enqueue(encoder.encode(value));
           }
         } catch (error) {
@@ -55,7 +57,7 @@ function buildSentinelStream(
           // before the failure belong to an answer that never arrived.
           return;
         }
-        const trailer = getTrailer();
+        const trailer = getTrailer(fullText);
         if (trailer) {
           controller.enqueue(encoder.encode(trailer));
         }
@@ -64,6 +66,21 @@ function buildSentinelStream(
       }
     },
   });
+}
+
+// The model can call searchProducts more than once in a single turn (e.g.
+// browse broadly, then narrow down) — see the tool description in
+// apps.chat-widget.chat.tsx. Since only the *last* call's results are ever
+// captured, they aren't guaranteed to be what the final reply text actually
+// recommends. When the text names a product from an earlier call by title,
+// prefer results that match what's actually being talked about over
+// whatever the last (possibly unrelated) call happened to return.
+function preferMentionedProducts(products: unknown[], fullText: string): unknown[] {
+  const mentioned = products.filter((p) => {
+    const title = (p as { title?: unknown })?.title;
+    return typeof title === "string" && title && fullText.includes(title);
+  });
+  return mentioned.length > 0 ? mentioned : products;
 }
 
 // A deterministically-served workflow question (see apps.chat-widget.chat.tsx)
@@ -95,10 +112,11 @@ export function textStreamWithProductCards(
 ) {
   const stream = buildSentinelStream(
     result.textStream,
-    () => {
+    (fullText) => {
       const products = getProducts();
       if (!products || products.length === 0) return "";
-      return `${PRODUCTS_SENTINEL_PREFIX}${JSON.stringify(products)}${PRODUCTS_SENTINEL_SUFFIX}`;
+      const shown = preferMentionedProducts(products, fullText);
+      return `${PRODUCTS_SENTINEL_PREFIX}${JSON.stringify(shown)}${PRODUCTS_SENTINEL_SUFFIX}`;
     },
     onStreamError,
   );
@@ -120,11 +138,12 @@ export function textStreamWithProductCardsAndNavigation(
 ) {
   const stream = buildSentinelStream(
     result.textStream,
-    () => {
+    (fullText) => {
       let trailer = "";
       const products = getProducts();
       if (products && products.length > 0) {
-        trailer += `${PRODUCTS_SENTINEL_PREFIX}${JSON.stringify(products)}${PRODUCTS_SENTINEL_SUFFIX}`;
+        const shown = preferMentionedProducts(products, fullText);
+        trailer += `${PRODUCTS_SENTINEL_PREFIX}${JSON.stringify(shown)}${PRODUCTS_SENTINEL_SUFFIX}`;
       }
       const navigateTarget = getNavigateTarget();
       if (navigateTarget && navigateTarget.url) {

@@ -741,7 +741,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     tools: {
       searchProducts: tool({
         description:
-          "Search or browse this store's products. Pass specific keywords (e.g. 'blue running shoes') when the shopper names something particular. Leave the query empty when they're just browsing or ask something generic like 'what do you sell' — this returns a sample of available products instead of an empty result. Never invent products that don't come from this tool.",
+          "Search or browse this store's products. Pass specific keywords (e.g. 'blue running shoes') when the shopper names something particular. Leave the query empty when they're just browsing or ask something generic like 'what do you sell' — this returns a sample of available products instead of an empty result. Call this at most once per reply — decide on the right query up front rather than browsing broadly and then calling again to narrow down; the shopper only ever sees the results from your most recent call, so a second call silently replaces the first and can leave your reply describing a product that's no longer shown. Never invent products that don't come from this tool.",
         inputSchema: z.object({
           query: z
             .string()
@@ -771,8 +771,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
           const response = await admin.graphql(
             `#graphql
-              query SearchProducts($query: String!, $first: Int!) {
-                products(first: $first, query: $query) {
+              query SearchProducts($query: String!, $first: Int!, $sortKey: ProductSortKeys!, $reverse: Boolean!) {
+                products(first: $first, query: $query, sortKey: $sortKey, reverse: $reverse) {
                   nodes {
                     title
                     handle
@@ -813,6 +813,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
                   ? keyword!
                   : buildProductQuery(keyword, collectionFilter),
                 first: usesCodeSideCollectionFilter || queryHasCollectionGroup ? 25 : 5,
+                // Unset, `products` defaults to sorting by internal id — a
+                // fixed order with no relation to the conversation, which
+                // made every generic "what do you sell" browse return the
+                // exact same first few SKUs every time. Newest-first at
+                // least varies as the catalog changes and biases toward
+                // what the merchant is actively selling.
+                sortKey: "UPDATED_AT",
+                reverse: true,
               },
             },
           );
