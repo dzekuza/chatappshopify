@@ -62,6 +62,7 @@ export default function App() {
         <s-link href="/app">Home</s-link>
         <s-link href="/app/settings">Settings</s-link>
         <s-link href="/app/knowledge">Knowledge</s-link>
+        <s-link href="/app/workflows">Workflows</s-link>
         <s-link href="/app/activity">Activity</s-link>
         {/* Persistent, so a merchant on any plan can upgrade or downgrade
             without contacting support or reinstalling. Hidden where the

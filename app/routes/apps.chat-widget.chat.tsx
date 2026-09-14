@@ -29,9 +29,11 @@ import {
 } from "../chat-guardrails.server";
 import { matchKnowledgeEntry } from "../knowledge-query-matcher.server";
 import {
+  plainTextResponse,
   textStreamWithProductCardsAndNavigation,
   type NavigateTarget,
 } from "../product-card-stream.server";
+import { parseQuestions, type WorkflowQuestion } from "../workflows";
 import { resolveGeminiModel } from "../gemini-model.server";
 import {
   AI_UNAVAILABLE_MESSAGE,
@@ -240,6 +242,44 @@ function mediaLine(entry: KnowledgeEntryRow) {
     : `\nVideo: ${url}`;
 }
 
+// Appended (only to the outgoing stream, never to the persisted ChatMessage —
+// see the two plainTextResponse call sites below) so the widget can render
+// the question's preset answers as buttons, same sentinel-comment convention
+// as AICW_PRODUCTS/AICW_NAVIGATE in product-card-stream.server.ts.
+function workflowQuestionResponseText(question: WorkflowQuestion) {
+  if (question.options.length === 0) return question.text;
+  return `${question.text}\n\n<!--AICW_WORKFLOW_OPTIONS:${JSON.stringify(question.options)}-->`;
+}
+
+type WorkflowAnswer = { questionId: string; question: string; answer: string };
+
+function parseWorkflowAnswers(value: unknown): WorkflowAnswer[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (a): a is WorkflowAnswer =>
+      typeof a === "object" &&
+      a !== null &&
+      typeof (a as WorkflowAnswer).question === "string" &&
+      typeof (a as WorkflowAnswer).answer === "string",
+  );
+}
+
+// Only ever added for the one turn right after a workflow's last question is
+// answered — this is what turns the shopper's answers into the "never invent
+// products" searchProducts-backed recommendation the workflow promises.
+function workflowRecommendationPrompt(topicLabel: string, answers: WorkflowAnswer[]) {
+  const qa = answers
+    .map((a, i) => `${i + 1}. ${a.question}\nShopper's answer: ${a.answer}`)
+    .join("\n\n");
+  return (
+    `The shopper just finished the guided "${topicLabel}" flow, answering these ` +
+    `preconfigured questions in order:\n\n${qa}\n\nUse their answers to call ` +
+    `searchProducts and recommend the single best-fitting product (or a very ` +
+    `short shortlist if nothing clearly stands out). Explain briefly why it fits ` +
+    `their answers. Never invent a product or detail that didn't come from the tool.`
+  );
+}
+
 function knowledgeBasePrompt(entries: KnowledgeEntryRow[]) {
   const freeform = entries.filter((e) => e.type !== "product");
   const productNotes = entries.filter((e) => e.type === "product");
@@ -352,7 +392,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     .slice(-MAX_MESSAGES)
     .map((m) => ({ role: m.role, content: m.content }) as ModelMessage);
 
-  if (messages.length === 0) {
+  // Set only on the very first request of a guided workflow — the topic
+  // button click itself, before the shopper has typed anything — so
+  // `messages` is legitimately empty in that one case.
+  const startWorkflowId =
+    typeof body?.startWorkflowId === "string" && body.startWorkflowId.trim()
+      ? body.startWorkflowId.trim()
+      : null;
+
+  if (messages.length === 0 && !startWorkflowId) {
     return cors(new Response("No message provided", { status: 400 }));
   }
 
@@ -407,6 +455,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       );
     }
 
+    // Set only when a proactive teaser is what opened the panel, so the
+    // merchant can tell a prompted conversation from one the shopper started
+    // on their own. Untrusted client input — it's an opaque attribution label,
+    // never used to look anything up.
+    const proactiveRuleId =
+      typeof body?.proactiveRuleId === "string" && body.proactiveRuleId.trim()
+        ? body.proactiveRuleId.trim().slice(0, 64)
+        : null;
+
     conversationRecord = await prisma.conversation.create({
       data: {
         shop: session.shop,
@@ -414,12 +471,55 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         customerName,
         customerEmail: customerEmail || null,
         customerPhone: customerPhone || null,
+        proactiveRuleId,
       },
     });
   }
 
-  const lastMessage = messages[messages.length - 1];
-  if (lastMessage.role === "user") {
+  // Starting a guided workflow — the topic button click itself, before the
+  // shopper has answered anything. Questions are served deterministically
+  // (no model call) until the last one, so this returns immediately with the
+  // workflow's first question.
+  if (startWorkflowId && !conversationRecord?.workflowId) {
+    const workflow = await prisma.workflow.findFirst({
+      where: { id: startWorkflowId, shop: session.shop, enabled: true },
+    });
+    const questions = workflow ? parseQuestions(workflow.questions) : [];
+    const firstQuestion = questions[0];
+
+    if (!workflow || !firstQuestion) {
+      return cors(new Response("Workflow not found", { status: 404 }));
+    }
+
+    await prisma.conversation.update({
+      where: { shop_conversationId: { shop: session.shop, conversationId } },
+      data: { workflowId: workflow.id, workflowQuestionIndex: 0, workflowAnswers: [] },
+    });
+
+    await prisma.chatMessage.create({
+      data: {
+        shop: session.shop,
+        conversationId,
+        role: "assistant",
+        content: firstQuestion.text,
+      },
+    });
+
+    notifyAssistantMessage({
+      shop: session.shop,
+      conversationId,
+      content: firstQuestion.text,
+    });
+
+    return cors(
+      plainTextResponse(workflowQuestionResponseText(firstQuestion), {
+        "X-Conversation-Id": conversationId,
+      }),
+    );
+  }
+
+  const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
+  if (lastMessage && lastMessage.role === "user") {
     await prisma.chatMessage.create({
       data: {
         shop: session.shop,
@@ -436,6 +536,84 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       content: String(lastMessage.content),
       isNewConversation: !existingConversation,
     });
+  }
+
+  // Continuing a guided workflow — the shopper's message above is the answer
+  // to the current question, not a free-form chat message.
+  let workflowRecommendationContext: string | null = null;
+
+  if (
+    conversationRecord?.workflowId &&
+    !conversationRecord.workflowCompletedAt &&
+    lastMessage &&
+    lastMessage.role === "user"
+  ) {
+    const workflow = await prisma.workflow.findFirst({
+      where: { id: conversationRecord.workflowId, shop: session.shop },
+    });
+    const questions = workflow ? parseQuestions(workflow.questions) : [];
+    const currentIndex = conversationRecord.workflowQuestionIndex ?? 0;
+    const currentQuestion = questions[currentIndex];
+
+    if (workflow && currentQuestion) {
+      const priorAnswers = parseWorkflowAnswers(conversationRecord.workflowAnswers);
+      const nextAnswers: WorkflowAnswer[] = [
+        ...priorAnswers,
+        {
+          questionId: currentQuestion.id,
+          question: currentQuestion.text,
+          answer: String(lastMessage.content),
+        },
+      ];
+      const nextIndex = currentIndex + 1;
+      const nextQuestion = questions[nextIndex];
+
+      if (nextQuestion) {
+        // More questions remain — serve the next one deterministically.
+        await prisma.conversation.update({
+          where: { shop_conversationId: { shop: session.shop, conversationId } },
+          data: { workflowQuestionIndex: nextIndex, workflowAnswers: nextAnswers },
+        });
+
+        await prisma.chatMessage.create({
+          data: {
+            shop: session.shop,
+            conversationId,
+            role: "assistant",
+            content: nextQuestion.text,
+          },
+        });
+
+        notifyAssistantMessage({
+          shop: session.shop,
+          conversationId,
+          content: nextQuestion.text,
+        });
+
+        return cors(
+          plainTextResponse(workflowQuestionResponseText(nextQuestion), {
+            "X-Conversation-Id": conversationId,
+          }),
+        );
+      }
+
+      // That was the last question — mark the workflow complete and fall
+      // through into the normal AI turn below, with the accumulated answers
+      // folded into the system prompt so the model recommends a product.
+      await prisma.conversation.update({
+        where: { shop_conversationId: { shop: session.shop, conversationId } },
+        data: {
+          workflowQuestionIndex: nextIndex,
+          workflowAnswers: nextAnswers,
+          workflowCompletedAt: new Date(),
+        },
+      });
+
+      workflowRecommendationContext = workflowRecommendationPrompt(
+        workflow.topicLabel,
+        nextAnswers,
+      );
+    }
   }
 
   // Contact on file for this conversation — used to verify order-lookup
@@ -495,7 +673,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   // only real storefront traffic, never the admin preview (see
   // app.chat-widget.preview.tsx). Fire-and-forget: a logging failure should
   // never block the chat response.
-  if (lastMessage.role === "user") {
+  if (lastMessage && lastMessage.role === "user") {
     const { matched, matchedEntryId } = matchKnowledgeEntry(
       String(lastMessage.content),
       knowledgeEntries,
@@ -537,6 +715,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       PERSONALIZATION_TOOL_INSTRUCTION,
       HANDOFF_TOOL_INSTRUCTION,
       NAVIGATE_TOOL_INSTRUCTION,
+      workflowRecommendationContext,
       // Last, so it overrides anything the merchant configured above.
       FACTUAL_ACCURACY_GUARDRAILS,
     ]

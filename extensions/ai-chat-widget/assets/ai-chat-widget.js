@@ -311,6 +311,36 @@
         "</span>"
       : "";
 
+    // Guided workflows (see app/workflows.ts): merchant-defined topics that
+    // walk the shopper through preconfigured questions toward a product
+    // recommendation. Rendered as buttons inside the empty state — additive
+    // to it, not a replacement, so free-form typing stays available even
+    // when workflows exist.
+    var workflows = Array.isArray(settings.workflows) ? settings.workflows : [];
+    var topicsHtml =
+      workflows.length > 0
+        ? '<div class="aicw-topics">' +
+          workflows
+            .map(function (w) {
+              return (
+                '<button type="button" class="aicw-topic-button" data-workflow-id="' +
+                escapeHtml(String(w.id)) +
+                '">' +
+                '<span class="aicw-topic-label">' +
+                escapeHtml(String(w.topicLabel || "")) +
+                "</span>" +
+                (w.description
+                  ? '<span class="aicw-topic-description">' +
+                    escapeHtml(String(w.description)) +
+                    "</span>"
+                  : "") +
+                "</button>"
+              );
+            })
+            .join("") +
+          "</div>"
+        : "";
+
     root.innerHTML =
       '<button type="button" class="aicw-bubble' +
       (settings.activatorLabel ? " aicw-bubble-labeled" : "") +
@@ -362,6 +392,7 @@
       greetingForNow() +
       "!</p>" +
       '<p class="aicw-empty-subtitle">Ask a question below to get started.</p>' +
+      topicsHtml +
       "</div>" +
       '<div class="aicw-messages" role="log" aria-live="polite"></div>' +
       '<button type="button" class="aicw-scroll-bottom" aria-label="Scroll to latest messages" hidden>' +
@@ -398,6 +429,7 @@
     var gateError = root.querySelector(".aicw-gate-error");
     var viewport = root.querySelector(".aicw-viewport");
     var emptyState = root.querySelector(".aicw-empty-state");
+    var topicsEl = root.querySelector(".aicw-topics");
     var messagesEl = root.querySelector(".aicw-messages");
     var scrollBottomBtn = root.querySelector(".aicw-scroll-bottom");
     var form = root.querySelector(".aicw-form");
@@ -477,6 +509,275 @@
       input.focus();
       startAgentPolling();
     }
+
+    // ---- Proactive messages ------------------------------------------
+    //
+    // Merchant-configured rules the browser evaluates by itself, from signals
+    // already on the page. Deliberately client-side only: the teaser is never
+    // written to the transcript and never sent to the model, so a proactive
+    // message can't manufacture a conversation the merchant then finds in
+    // Activity with no shopper in it.
+    var PROACTIVE_COOLDOWN_KEY = "aicw-proactive-cooldown";
+    var PROACTIVE_COOLDOWN_MS = 60000;
+    var PROACTIVE_VISITS_KEY = "aicw-visits";
+    var PROACTIVE_DAY_MS = 24 * 60 * 60 * 1000;
+    var headerSubtitle = root.querySelector(".aicw-header-subtitle");
+    var activeProactiveRuleId = null;
+    var activePeekEl = null;
+    var proactiveFired = false;
+    var proactiveTimers = [];
+    var proactiveCleanups = [];
+
+    // sessionStorage/localStorage both throw in private browsing — same
+    // reasoning as getStoredOpenState above.
+    function readStore(store, key) {
+      try {
+        return window[store].getItem(key);
+      } catch (err) {
+        return null;
+      }
+    }
+
+    function writeStore(store, key, value) {
+      try {
+        window[store].setItem(key, value);
+      } catch (err) {
+        // Storage unavailable — the rule just shows again next time.
+      }
+    }
+
+    function proactiveStoreFor(frequency) {
+      return frequency === "once_per_session" ? "sessionStorage" : "localStorage";
+    }
+
+    function proactiveAlreadyShown(rule) {
+      var raw = readStore(
+        proactiveStoreFor(rule.frequency),
+        "aicw-proactive-" + rule.id,
+      );
+      if (!raw) return false;
+      if (rule.frequency !== "once_per_day") return true;
+      var shownAt = parseInt(raw, 10);
+      if (!shownAt) return false;
+      return Date.now() - shownAt < PROACTIVE_DAY_MS;
+    }
+
+    // Checked before /collections/ so that /collections/x/products/y — a
+    // product page reached through a collection — isn't mistaken for one.
+    function currentPageScope() {
+      var path = window.location.pathname.replace(/\/+$/, "");
+      if (path.indexOf("/products/") !== -1) return "product";
+      if (path.indexOf("/collections/") !== -1) return "collection";
+      if (/\/cart$/.test(path)) return "cart";
+      if (path === "") return "home";
+      return "other";
+    }
+
+    function matchesAudience(rule) {
+      var audience = rule.audience || {};
+      var scope = audience.pages || "any";
+      if (scope !== "any" && scope !== currentPageScope()) return false;
+
+      var handles = audience.handles || [];
+      if (!handles.length) return true;
+      for (var i = 0; i < handles.length; i++) {
+        if (window.location.pathname.indexOf("/" + handles[i]) !== -1) return true;
+      }
+      return false;
+    }
+
+    function teardownProactive() {
+      for (var i = 0; i < proactiveTimers.length; i++) {
+        clearTimeout(proactiveTimers[i]);
+      }
+      proactiveTimers = [];
+      for (var j = 0; j < proactiveCleanups.length; j++) {
+        proactiveCleanups[j]();
+      }
+      proactiveCleanups = [];
+    }
+
+    function dismissProactivePeek() {
+      teardownProactive();
+      if (activePeekEl && activePeekEl.parentNode) {
+        activePeekEl.parentNode.removeChild(activePeekEl);
+      }
+      activePeekEl = null;
+    }
+
+    function showProactive(rule) {
+      // One per page view, never over an open panel, and never once the
+      // shopper is already talking to us.
+      if (proactiveFired || contact) return;
+      if (root.classList.contains("aicw-open")) return;
+
+      proactiveFired = true;
+      teardownProactive();
+      writeStore(
+        proactiveStoreFor(rule.frequency),
+        "aicw-proactive-" + rule.id,
+        String(Date.now()),
+      );
+      writeStore("sessionStorage", PROACTIVE_COOLDOWN_KEY, String(Date.now()));
+
+      var peek = document.createElement("div");
+      peek.className = "aicw-peek";
+
+      var openBtn = document.createElement("button");
+      openBtn.type = "button";
+      openBtn.className = "aicw-peek-text";
+      openBtn.textContent = rule.message;
+
+      var dismissBtn = document.createElement("button");
+      dismissBtn.type = "button";
+      dismissBtn.className = "aicw-peek-dismiss";
+      dismissBtn.setAttribute("aria-label", "Dismiss message");
+      dismissBtn.innerHTML = closeIcon();
+
+      peek.appendChild(openBtn);
+      peek.appendChild(dismissBtn);
+      root.appendChild(peek);
+      activePeekEl = peek;
+
+      requestAnimationFrame(function () {
+        peek.classList.add("aicw-peek-in");
+      });
+
+      dismissBtn.addEventListener("click", function (event) {
+        event.stopPropagation();
+        dismissProactivePeek();
+      });
+
+      openBtn.addEventListener("click", function () {
+        // Attribution only — the copy replaces the panel's welcome line and
+        // is never pushed into `history`, so the model never sees words the
+        // shopper didn't type.
+        activeProactiveRuleId = rule.id;
+        if (headerSubtitle) headerSubtitle.textContent = rule.message;
+        dismissProactivePeek();
+        bubble.click();
+      });
+    }
+
+    function armProactive(rule) {
+      var trigger = rule.trigger || {};
+
+      if (trigger.type === "time_on_page") {
+        proactiveTimers.push(
+          setTimeout(function () {
+            showProactive(rule);
+          }, (trigger.seconds || 15) * 1000),
+        );
+        return;
+      }
+
+      if (trigger.type === "exit_intent") {
+        var onMouseOut = function (event) {
+          // Only a pointer leaving through the top of the viewport reads as
+          // "heading for the tab bar" — sideways exits are just cursor drift.
+          if (event.clientY == null || event.clientY > 0) return;
+          if (event.relatedTarget) return;
+          showProactive(rule);
+        };
+        document.addEventListener("mouseout", onMouseOut);
+        proactiveCleanups.push(function () {
+          document.removeEventListener("mouseout", onMouseOut);
+        });
+        return;
+      }
+
+      if (trigger.type === "scroll_depth") {
+        var onScroll = function () {
+          var scrollable =
+            document.documentElement.scrollHeight - window.innerHeight;
+          if (scrollable <= 0) return;
+          var percent = (window.scrollY / scrollable) * 100;
+          if (percent >= (trigger.percent || 50)) showProactive(rule);
+        };
+        window.addEventListener("scroll", onScroll, { passive: true });
+        proactiveCleanups.push(function () {
+          window.removeEventListener("scroll", onScroll);
+        });
+        return;
+      }
+
+      if (trigger.type === "return_visit") {
+        var visits = parseInt(readStore("localStorage", PROACTIVE_VISITS_KEY) || "0", 10);
+        if (!(visits >= (trigger.minVisits || 2))) return;
+        proactiveTimers.push(
+          setTimeout(function () {
+            showProactive(rule);
+          }, 3000),
+        );
+        return;
+      }
+
+      if (trigger.type === "cart_value" || trigger.type === "cart_idle") {
+        // /cart.js is Online Store only. On a headless storefront this fetch
+        // fails and the rule simply never fires — the admin already hides
+        // these triggers there, and this is the belt to that braces.
+        fetch("/cart.js", { headers: { Accept: "application/json" } })
+          .then(function (res) {
+            return res.ok ? res.json() : null;
+          })
+          .then(function (cart) {
+            if (!cart) return;
+            if (trigger.type === "cart_value") {
+              var subtotal = (cart.total_price || 0) / 100;
+              if (subtotal < (trigger.minSubtotal || 0)) return;
+              proactiveTimers.push(
+                setTimeout(function () {
+                  showProactive(rule);
+                }, 2000),
+              );
+              return;
+            }
+            if (!(cart.item_count > 0)) return;
+            proactiveTimers.push(
+              setTimeout(function () {
+                showProactive(rule);
+              }, (trigger.seconds || 30) * 1000),
+            );
+          })
+          .catch(function () {});
+      }
+    }
+
+    function initProactive() {
+      if (!settings.proactiveEnabled) return;
+      var rules = Array.isArray(settings.proactiveRules)
+        ? settings.proactiveRules
+        : [];
+      if (!rules.length) return;
+
+      // A shopper who has passed the gate has already engaged. restoreHistory
+      // is async, so `history` can still be empty here even mid-conversation —
+      // `contact` is the signal that's true synchronously.
+      if (contact) return;
+      if (root.classList.contains("aicw-open")) return;
+
+      var visits = parseInt(readStore("localStorage", PROACTIVE_VISITS_KEY) || "0", 10);
+      writeStore(
+        "localStorage",
+        PROACTIVE_VISITS_KEY,
+        String((visits > 0 ? visits : 0) + 1),
+      );
+
+      var lastShown = parseInt(
+        readStore("sessionStorage", PROACTIVE_COOLDOWN_KEY) || "0",
+        10,
+      );
+      if (lastShown > 0 && Date.now() - lastShown < PROACTIVE_COOLDOWN_MS) return;
+
+      for (var i = 0; i < rules.length; i++) {
+        var rule = rules[i];
+        if (!matchesAudience(rule)) continue;
+        if (proactiveAlreadyShown(rule)) continue;
+        armProactive(rule);
+      }
+    }
+
+    initProactive();
 
     function pollForAgentReplies() {
       if (!messagesEndpoint || !contact) return;
@@ -601,6 +902,7 @@
       history = [];
       messagesEl.innerHTML = "";
       updateEmptyState();
+      if (topicsEl) topicsEl.hidden = false;
       clearPendingAttachment();
       lastAgentMessageAt = new Date(0).toISOString();
       try {
@@ -650,6 +952,7 @@
     });
 
     bubble.addEventListener("click", function () {
+      dismissProactivePeek();
       root.classList.toggle("aicw-open");
       var isOpen = root.classList.contains("aicw-open");
       storeOpenState(isOpen);
@@ -799,10 +1102,16 @@
     // sentinels can both be present and only one of them is actually last.
     var PRODUCTS_SENTINEL_REGEX = /\n\n<!--AICW_PRODUCTS:(\[.*?\])-->/;
     var NAVIGATE_SENTINEL_REGEX = /\n\n<!--AICW_NAVIGATE:(\{.*?\})-->/;
+    // Appended only to a deterministic workflow-question reply (see
+    // workflowQuestionResponseText in apps.chat-widget.chat.tsx) — the
+    // question's preset answers, rendered as buttons below the bubble.
+    var WORKFLOW_OPTIONS_SENTINEL_REGEX =
+      /\n\n<!--AICW_WORKFLOW_OPTIONS:(\[.*?\])-->/;
 
     function extractProductCards(text) {
       var products = [];
       var navigateTarget = null;
+      var workflowOptions = [];
 
       var productsMatch = text.match(PRODUCTS_SENTINEL_REGEX);
       if (productsMatch) {
@@ -828,7 +1137,26 @@
           text.slice(navigateMatch.index + navigateMatch[0].length);
       }
 
-      return { text: text, products: products, navigateTarget: navigateTarget };
+      var workflowOptionsMatch = text.match(WORKFLOW_OPTIONS_SENTINEL_REGEX);
+      if (workflowOptionsMatch) {
+        try {
+          workflowOptions = JSON.parse(workflowOptionsMatch[1]);
+        } catch (err) {
+          workflowOptions = [];
+        }
+        text =
+          text.slice(0, workflowOptionsMatch.index) +
+          text.slice(
+            workflowOptionsMatch.index + workflowOptionsMatch[0].length,
+          );
+      }
+
+      return {
+        text: text,
+        products: products,
+        navigateTarget: navigateTarget,
+        workflowOptions: workflowOptions,
+      };
     }
 
     // Same-origin product urls only — never hand a shopper's browser off to
@@ -1085,43 +1413,16 @@
       }
     });
 
-    form.addEventListener("submit", async function (event) {
-      event.preventDefault();
-      var text = input.value.trim();
-      var attachmentUrl = pendingAttachmentUrl;
-      if (!text && !attachmentUrl) return;
-
-      // The attached image rides along as a bare url line — the same
-      // convention extractMedia() already renders inline for knowledge-base
-      // media, so the shopper's own bubble shows the image with no extra
-      // rendering logic, and the server can pull it back out for Gemini
-      // vision (see ATTACHMENT_IMAGE_URL_REGEX in apps.chat-widget.chat.tsx).
-      var outgoingContent = attachmentUrl
-        ? text
-          ? text + "\n\n" + attachmentUrl
-          : attachmentUrl
-        : text;
-
-      input.value = "";
-      autoResizeInput();
-      clearPendingAttachment();
-      sendBtn.disabled = true;
-      scrollToBottom(false);
-      appendMessage("user", outgoingContent);
-      history.push({ role: "user", content: outgoingContent });
-
-      var assistantEl = appendMessage("assistant", "");
-      renderTypingIndicator(assistantEl);
-
+    // Shared by the composer submit handler and startWorkflow below — both
+    // POST to chatEndpoint and stream the reply into an assistant bubble the
+    // same way; a workflow question reply just never carries product-card or
+    // navigate sentinels, so extractProductCards is a no-op for it.
+    async function sendChatRequest(payload, assistantEl) {
       try {
         var response = await fetch(chatEndpoint, {
           method: "POST",
           headers: { "Content-Type": chatContentType },
-          body: JSON.stringify({
-            messages: history,
-            conversationId: conversationId,
-            contact: contact,
-          }),
+          body: JSON.stringify(payload),
         });
 
         if (!response.ok || !response.body) {
@@ -1178,6 +1479,9 @@
           renderProductCards(productsEl, extracted.products);
           messagesEl.appendChild(productsEl);
         }
+        if (extracted.workflowOptions.length > 0) {
+          renderWorkflowOptions(extracted.workflowOptions);
+        }
         if (isFollowing) scrollToBottom(false);
 
         history.push({ role: "assistant", content: extracted.text });
@@ -1185,9 +1489,132 @@
       } catch (err) {
         assistantEl.textContent =
           "Sorry, something went wrong. Please try again.";
+      }
+    }
+
+    // A workflow question's preset answers (see WORKFLOW_OPTIONS_SENTINEL_REGEX
+    // above), rendered as a row of buttons under the assistant's bubble, plus
+    // an "Other" button so the shopper can still type something not listed.
+    // Picking any of them just submits it exactly like typed free text — the
+    // server can't tell the difference and doesn't need to.
+    function renderWorkflowOptions(options) {
+      var wrap = document.createElement("div");
+      wrap.className = "aicw-workflow-options";
+
+      function pick(value) {
+        wrap.remove();
+        submitUserMessage(value);
+      }
+
+      options.forEach(function (option) {
+        var button = document.createElement("button");
+        button.type = "button";
+        button.className = "aicw-workflow-option";
+        button.textContent = option;
+        button.addEventListener("click", function () {
+          pick(option);
+        });
+        wrap.appendChild(button);
+      });
+
+      var otherButton = document.createElement("button");
+      otherButton.type = "button";
+      otherButton.className = "aicw-workflow-option aicw-workflow-option-other";
+      otherButton.textContent = "Other";
+      otherButton.addEventListener("click", function () {
+        wrap.remove();
+        input.focus();
+      });
+      wrap.appendChild(otherButton);
+
+      messagesEl.appendChild(wrap);
+      if (isFollowing) scrollToBottom(false);
+    }
+
+    // Shared by the composer submit handler and the workflow-options buttons
+    // above — both ultimately send a shopper message the same way, whether
+    // typed or picked from a preset answer.
+    async function submitUserMessage(outgoingContent) {
+      if (!outgoingContent) return;
+
+      sendBtn.disabled = true;
+      scrollToBottom(false);
+      appendMessage("user", outgoingContent);
+      history.push({ role: "user", content: outgoingContent });
+
+      var assistantEl = appendMessage("assistant", "");
+      renderTypingIndicator(assistantEl);
+
+      try {
+        await sendChatRequest(
+          {
+            messages: history,
+            conversationId: conversationId,
+            contact: contact,
+            proactiveRuleId: activeProactiveRuleId,
+          },
+          assistantEl,
+        );
       } finally {
         sendBtn.disabled = false;
       }
+    }
+
+    // Picking a topic button starts a guided workflow: the server serves its
+    // first preconfigured question with no AI call (see startWorkflowId in
+    // apps.chat-widget.chat.tsx). Every following turn goes through the
+    // normal composer submit handler below — the server alone tracks
+    // whether an incoming message is a workflow answer or free-form chat.
+    function startWorkflow(workflowId) {
+      if (topicsEl) topicsEl.hidden = true;
+      emptyState.hidden = true;
+      messagesEl.hidden = false;
+
+      var assistantEl = appendMessage("assistant", "");
+      renderTypingIndicator(assistantEl);
+
+      sendChatRequest(
+        {
+          messages: [],
+          conversationId: conversationId,
+          contact: contact,
+          startWorkflowId: workflowId,
+        },
+        assistantEl,
+      ).then(function () {
+        input.focus();
+      });
+    }
+
+    if (topicsEl) {
+      topicsEl.addEventListener("click", function (event) {
+        var button = event.target.closest(".aicw-topic-button");
+        if (!button) return;
+        startWorkflow(button.getAttribute("data-workflow-id"));
+      });
+    }
+
+    form.addEventListener("submit", async function (event) {
+      event.preventDefault();
+      var text = input.value.trim();
+      var attachmentUrl = pendingAttachmentUrl;
+      if (!text && !attachmentUrl) return;
+
+      // The attached image rides along as a bare url line — the same
+      // convention extractMedia() already renders inline for knowledge-base
+      // media, so the shopper's own bubble shows the image with no extra
+      // rendering logic, and the server can pull it back out for Gemini
+      // vision (see ATTACHMENT_IMAGE_URL_REGEX in apps.chat-widget.chat.tsx).
+      var outgoingContent = attachmentUrl
+        ? text
+          ? text + "\n\n" + attachmentUrl
+          : attachmentUrl
+        : text;
+
+      input.value = "";
+      autoResizeInput();
+      clearPendingAttachment();
+      await submitUserMessage(outgoingContent);
     });
   }
 

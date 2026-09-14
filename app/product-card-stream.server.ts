@@ -66,6 +66,27 @@ function buildSentinelStream(
   });
 }
 
+// A deterministically-served workflow question (see apps.chat-widget.chat.tsx)
+// never calls the model, so there's no AI SDK textStream to wrap — this just
+// puts a single string through the same "one text/plain chunk" shape so the
+// client's existing stream-reading loop (ai-chat-widget.js) needs no branch
+// for it.
+export function plainTextResponse(
+  text: string,
+  extraHeaders: Record<string, string> = {},
+) {
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode(text));
+      controller.close();
+    },
+  });
+
+  return new Response(stream, {
+    headers: { "Content-Type": "text/plain; charset=utf-8", ...extraHeaders },
+  });
+}
+
 export function textStreamWithProductCards(
   result: TextStreamSource,
   getProducts: () => unknown[] | null,

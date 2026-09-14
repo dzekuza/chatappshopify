@@ -14,8 +14,10 @@ import { AppearanceSection } from "../components/settings/appearance-section";
 import { AiModelSection } from "../components/settings/ai-model-section";
 import { TelegramSection } from "../components/settings/telegram-section";
 import { HeadlessSection } from "../components/settings/headless-section";
+import { ProactiveSection } from "../components/settings/proactive-section";
 import { buildHeadlessEmbed } from "../headless-embed.server";
 import { parseStorefrontOrigins } from "../cors.server";
+import { parseProactiveRules } from "../proactive";
 import type { StorefrontPlatform } from "../storefront.server";
 import { telegramBotUsername, telegramMissingConfig } from "../telegram.server";
 import type { KnowledgeCollection } from "../components/settings/knowledge-sync-section";
@@ -93,6 +95,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       embed: buildHeadlessEmbed(session.shop, process.env.SHOPIFY_APP_URL ?? ""),
       storefrontOrigins: parseStorefrontOrigins(settings.storefrontOrigins),
       detectedPlatform,
+    },
+    proactive: {
+      enabled: settings.proactiveEnabled,
+      rules: parseProactiveRules(settings.proactiveRules),
     },
     telegram: {
       link: telegramLink
@@ -198,7 +204,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function SettingsPage() {
-  const { settings, addToThemeUrl, isProPlan, telegram, headless } =
+  const { settings, addToThemeUrl, isProPlan, telegram, headless, proactive } =
     useLoaderData<typeof loader>();
   const fetcher = useFetcher<typeof action>();
 
@@ -353,6 +359,12 @@ export default function SettingsPage() {
         link={telegram.link}
         botUsername={telegram.botUsername}
         missingConfig={telegram.missingConfig}
+      />
+
+      <ProactiveSection
+        proactiveEnabled={proactive.enabled}
+        rules={proactive.rules}
+        detectedPlatform={headless.detectedPlatform}
       />
 
       {/* Must be a direct child of <s-page> (not nested inside the <form>

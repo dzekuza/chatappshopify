@@ -59,6 +59,15 @@ model WidgetSettings {
   // comes into it. Stored as an array of bare origins, e.g.
   // ["https://shop.example.com"] — see cors.server.ts.
   storefrontOrigins           Json      @default("[]")
+  // Proactive in-widget messages: client-side rules the widget evaluates from
+  // signals already on the page (dwell, exit intent, scroll, return visit,
+  // cart). Stored here rather than in their own table so the settings fetch
+  // that runs on every storefront page load costs no extra query — same
+  // reasoning as knowledgeCollections/storefrontOrigins above. A dedicated
+  // table only earns its keep once per-rule impression stats exist.
+  // Shape is validated by parseProactiveRules() in proactive.ts.
+  proactiveEnabled            Boolean   @default(false)
+  proactiveRules              Json      @default("[]")
   convertedCustomersCount     Int?
   convertedCustomersCheckedAt DateTime?
   updatedAt                   DateTime  @updatedAt
@@ -128,10 +137,47 @@ model Conversation {
   customerPhone         String?
   needsHuman            Boolean   @default(false)
   needsHumanRequestedAt DateTime?
+  // Which proactive rule (WidgetSettings.proactiveRules[].id) opened this
+  // conversation, if any. Null for chats the shopper started themselves —
+  // that's how the merchant tells an earned conversation from a prompted one.
+  proactiveRuleId       String?
+  // Which Workflow (guided question flow) this conversation is running, if
+  // any. workflowQuestionIndex tracks how many preconfigured questions have
+  // already been asked; workflowAnswers accumulates { questionId, question,
+  // answer } for the final AI recommendation turn. workflowCompletedAt is set
+  // once that recommendation turn has run, after which the conversation
+  // reverts to normal free-form chat.
+  workflowId            String?
+  workflowQuestionIndex Int?      @default(0)
+  workflowAnswers       Json      @default("[]")
+  workflowCompletedAt   DateTime?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
   @@unique([shop, conversationId])
+  @@schema("chat_widget")
+}
+
+// A merchant-defined guided question flow shown to shoppers as a topic button
+// in the widget (e.g. "Help me pick a product"). Questions are served
+// deterministically, one at a time, from `questions` — the AI is only
+// invoked once, after the last answer, to recommend a product using the
+// accumulated answers. Shape of `questions` is validated by
+// validateQuestions()/parseQuestions() in app/workflows.ts.
+model Workflow {
+  id          String   @id @default(cuid())
+  shop        String
+  title       String
+  topicLabel  String
+  description String?
+  enabled     Boolean  @default(true)
+  position    Int      @default(0)
+  questions   Json     @default("[]")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([shop])
+  @@index([shop, enabled])
   @@schema("chat_widget")
 }
 
