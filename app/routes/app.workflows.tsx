@@ -96,24 +96,24 @@ export default function Workflows() {
         Create workflow
       </s-button>
 
-      <s-section
-        accessibilityLabel="Workflows"
-        padding={workflows.length === 0 ? "base" : "none"}
-      >
+      <s-section accessibilityLabel="About workflows">
         <s-paragraph>
           A workflow offers shoppers a guided topic (e.g. &quot;Help me pick a
           product&quot;) in the chat widget. It asks your preconfigured
           questions one at a time, then has the AI recommend a product using
           their answers.
         </s-paragraph>
+      </s-section>
 
+      <s-section
+        accessibilityLabel="Workflows"
+        padding={workflows.length === 0 ? "base" : "none"}
+      >
         {workflows.length === 0 ? (
-          <s-box padding="base">
-            <s-text color="subdued">
-              No workflows yet. Create one to offer shoppers a guided path to
-              a product recommendation.
-            </s-text>
-          </s-box>
+          <s-text color="subdued">
+            No workflows yet. Create one to offer shoppers a guided path to a
+            product recommendation.
+          </s-text>
         ) : (
           <s-table variant="auto">
             <s-table-header-row>
