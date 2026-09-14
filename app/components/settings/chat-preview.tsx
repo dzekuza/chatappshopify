@@ -10,6 +10,7 @@ import type { KnowledgeCollection } from "./knowledge-sync-section";
 import { ProductCardRow, type ChatProduct } from "./product-card";
 import { TimestampedVideo } from "../timestamped-video";
 import { parseChatMarkdown, type InlineSegment } from "../../chat-markdown";
+import type { WorkflowAnswer, WorkflowQuestion } from "../../workflows";
 
 type PreviewMessage = {
   // "agent" is a human reply the merchant sent from the Activity page. The
@@ -18,6 +19,20 @@ type PreviewMessage = {
   role: "user" | "assistant" | "agent";
   content: string;
   products?: ChatProduct[];
+};
+
+export type PreviewWorkflow = {
+  id: string;
+  topicLabel: string;
+  description: string | null;
+  questions: WorkflowQuestion[];
+};
+
+type ActiveWorkflow = {
+  topicLabel: string;
+  questions: WorkflowQuestion[];
+  currentIndex: number;
+  answers: WorkflowAnswer[];
 };
 
 export type ChatPreviewProps = {
@@ -32,6 +47,7 @@ export type ChatPreviewProps = {
   geminiModel: string;
   language: string;
   knowledgeCollections: KnowledgeCollection[];
+  workflows: PreviewWorkflow[];
 };
 
 function RefreshIcon() {
@@ -290,11 +306,27 @@ export function ChatPreview({
   geminiModel,
   language,
   knowledgeCollections,
+  workflows,
 }: ChatPreviewProps) {
   const [previewMessages, setPreviewMessages] = useState<PreviewMessage[]>([]);
   const [previewInput, setPreviewInput] = useState("");
   const [isPreviewSending, setIsPreviewSending] = useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+
+  // Guided workflows in the preview are tracked entirely client-side — there's
+  // no Conversation row here to persist question-stepping state on (see the
+  // file header on app.chat-widget.preview.tsx), so the whole question list
+  // is loaded upfront and stepped through locally with no network call, same
+  // deterministic behavior as the real widget just without the round trips.
+  // Only the final turn (after the last question) hits the server, to run
+  // the actual AI recommendation.
+  const [activeWorkflow, setActiveWorkflow] = useState<ActiveWorkflow | null>(
+    null,
+  );
+  // Lets "Other" hide the option chips immediately, same as `wrap.remove()`
+  // does on the storefront widget — reset whenever a new question's chips
+  // would otherwise show.
+  const [workflowOptionsDismissed, setWorkflowOptionsDismissed] = useState(false);
 
   // Contact gate — the storefront blocks a conversation until the shopper
   // gives a name plus one of email/phone (see apps.chat-widget.chat.tsx,
@@ -315,6 +347,7 @@ export function ChatPreview({
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const bodyRef = useRef<HTMLDivElement>(null);
   const [isFollowingBottom, setIsFollowingBottom] = useState(true);
@@ -381,25 +414,17 @@ export function ChatPreview({
     setPreviewMessages([]);
     setAttachmentUrl(null);
     setAttachmentError(null);
+    setActiveWorkflow(null);
+    setWorkflowOptionsDismissed(false);
   };
 
-  const sendPreviewMessage = async () => {
-    const text = previewInput.trim();
-    if ((!text && !attachmentUrl) || isPreviewSending) return;
-
-    // The image rides along as a bare URL inside the message text — the same
-    // convention the storefront uses, which both chat backends detect with
-    // ATTACHMENT_IMAGE_URL_REGEX and convert to multimodal content.
-    const content = attachmentUrl ? `${text}\n${attachmentUrl}`.trim() : text;
-
-    const nextHistory: PreviewMessage[] = [
-      ...previewMessages,
-      { role: "user", content },
-    ];
-    setPreviewMessages(nextHistory);
-    setPreviewInput("");
-    setAttachmentUrl(null);
-    setAttachmentError(null);
+  // Shared by free-form messages and the final workflow answer — both end
+  // the same way, an AI turn against /app/chat-widget/preview. `extra` only
+  // gets set for that one final workflow turn (see submitAnswer below).
+  const runAssistantTurn = async (
+    nextHistory: PreviewMessage[],
+    extra?: { workflowTopicLabel: string; workflowAnswers: WorkflowAnswer[] },
+  ) => {
     setIsPreviewSending(true);
     setPreviewMessages((prev) => [...prev, { role: "assistant", content: "" }]);
 
@@ -413,6 +438,12 @@ export function ChatPreview({
           geminiModel,
           language,
           knowledgeCollections,
+          ...(extra
+            ? {
+                workflowTopicLabel: extra.workflowTopicLabel,
+                workflowAnswers: extra.workflowAnswers,
+              }
+            : {}),
         }),
       });
 
@@ -461,6 +492,99 @@ export function ChatPreview({
       setIsPreviewSending(false);
     }
   };
+
+  // Picking a topic button — no network call, the whole question list is
+  // already loaded, so the first question renders immediately.
+  const startWorkflow = (workflow: PreviewWorkflow) => {
+    const firstQuestion = workflow.questions[0];
+    if (!firstQuestion || isPreviewSending) return;
+
+    setActiveWorkflow({
+      topicLabel: workflow.topicLabel,
+      questions: workflow.questions,
+      currentIndex: 0,
+      answers: [],
+    });
+    setWorkflowOptionsDismissed(false);
+    setPreviewMessages([{ role: "assistant", content: firstQuestion.text }]);
+  };
+
+  // The shopper's answer to the current workflow question — either typed or
+  // picked from a preset option, the server can't tell the difference and
+  // doesn't need to. Advances locally until the last question, then runs the
+  // one real AI turn for the recommendation.
+  const submitWorkflowAnswer = (workflow: ActiveWorkflow, text: string) => {
+    const currentQuestion = workflow.questions[workflow.currentIndex];
+    if (!currentQuestion) return;
+
+    const nextAnswers: WorkflowAnswer[] = [
+      ...workflow.answers,
+      { questionId: currentQuestion.id, question: currentQuestion.text, answer: text },
+    ];
+    const nextIndex = workflow.currentIndex + 1;
+    const nextQuestion = workflow.questions[nextIndex];
+
+    const nextHistory: PreviewMessage[] = [
+      ...previewMessages,
+      { role: "user", content: text },
+    ];
+    setPreviewMessages(nextHistory);
+
+    if (nextQuestion) {
+      setActiveWorkflow({ ...workflow, currentIndex: nextIndex, answers: nextAnswers });
+      setWorkflowOptionsDismissed(false);
+      setPreviewMessages((prev) => [...prev, { role: "assistant", content: nextQuestion.text }]);
+      return;
+    }
+
+    // Last question just answered — the workflow's done; anything after this
+    // is free-form chat again.
+    setActiveWorkflow(null);
+    runAssistantTurn(nextHistory, {
+      workflowTopicLabel: workflow.topicLabel,
+      workflowAnswers: nextAnswers,
+    });
+  };
+
+  const sendPreviewMessage = () => {
+    const text = previewInput.trim();
+    if ((!text && !attachmentUrl) || isPreviewSending) return;
+
+    // The image rides along as a bare URL inside the message text — the same
+    // convention the storefront uses, which both chat backends detect with
+    // ATTACHMENT_IMAGE_URL_REGEX and convert to multimodal content.
+    const content = attachmentUrl ? `${text}\n${attachmentUrl}`.trim() : text;
+
+    setPreviewInput("");
+    setAttachmentUrl(null);
+    setAttachmentError(null);
+
+    if (activeWorkflow) {
+      submitWorkflowAnswer(activeWorkflow, content);
+      return;
+    }
+
+    const nextHistory: PreviewMessage[] = [
+      ...previewMessages,
+      { role: "user", content },
+    ];
+    setPreviewMessages(nextHistory);
+    runAssistantTurn(nextHistory);
+  };
+
+  // The current workflow question's preset answers (if any) are only shown
+  // while that question is still pending — i.e. the last message on screen
+  // is the assistant's question and nothing has answered it yet. Once
+  // submitWorkflowAnswer appends the shopper's reply, the last message
+  // becomes "user" and these disappear on their own.
+  const pendingWorkflowOptions =
+    activeWorkflow &&
+    !isPreviewSending &&
+    !workflowOptionsDismissed &&
+    previewMessages.length > 0 &&
+    previewMessages[previewMessages.length - 1].role === "assistant"
+      ? activeWorkflow.questions[activeWorkflow.currentIndex]?.options
+      : undefined;
 
   return (
     <div
@@ -583,6 +707,27 @@ export function ChatPreview({
                   <p className={styles.previewEmptySubtitle}>
                     Ask a question below to see how your assistant responds.
                   </p>
+                  {workflows.length > 0 ? (
+                    <div className={styles.previewTopics}>
+                      {workflows.map((workflow) => (
+                        <button
+                          key={workflow.id}
+                          type="button"
+                          className={styles.previewTopicButton}
+                          onClick={() => startWorkflow(workflow)}
+                        >
+                          <span className={styles.previewTopicLabel}>
+                            {workflow.topicLabel}
+                          </span>
+                          {workflow.description ? (
+                            <span className={styles.previewTopicDescription}>
+                              {workflow.description}
+                            </span>
+                          ) : null}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               ) : (
                 <div className={styles.previewMessages}>
@@ -623,6 +768,36 @@ export function ChatPreview({
                   })}
                 </div>
               )}
+
+              {pendingWorkflowOptions && pendingWorkflowOptions.length > 0 ? (
+                <div className={styles.previewWorkflowOptions}>
+                  {pendingWorkflowOptions.map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      className={styles.previewWorkflowOption}
+                      onClick={() =>
+                        activeWorkflow && submitWorkflowAnswer(activeWorkflow, option)
+                      }
+                    >
+                      {option}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    className={[
+                      styles.previewWorkflowOption,
+                      styles.previewWorkflowOptionOther,
+                    ].join(" ")}
+                    onClick={() => {
+                      setWorkflowOptionsDismissed(true);
+                      textareaRef.current?.focus();
+                    }}
+                  >
+                    Other
+                  </button>
+                </div>
+              ) : null}
 
               <button
                 type="button"
@@ -697,6 +872,7 @@ export function ChatPreview({
                 <PlusIcon />
               </button>
               <textarea
+                ref={textareaRef}
                 className={styles.previewTextarea}
                 rows={1}
                 value={previewInput}

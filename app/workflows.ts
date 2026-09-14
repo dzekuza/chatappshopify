@@ -193,3 +193,43 @@ export function publicWorkflow(record: WorkflowRecord): PublicWorkflow {
     questions: record.questions,
   };
 }
+
+// One shopper answer accumulated while stepping through a workflow's
+// questions, used to build the final AI recommendation turn. Shared by the
+// real storefront chat endpoint (apps.chat-widget.chat.tsx, where it's
+// persisted on Conversation.workflowAnswers) and the admin preview
+// (app.chat-widget.preview.tsx, where the client tracks it entirely
+// in-memory and only sends it once, for the final turn).
+export type WorkflowAnswer = { questionId: string; question: string; answer: string };
+
+// Tolerant, same reasoning as parseQuestions — never let a malformed answer
+// break the recommendation turn.
+export function parseWorkflowAnswers(value: unknown): WorkflowAnswer[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (a): a is WorkflowAnswer =>
+      typeof a === "object" &&
+      a !== null &&
+      typeof (a as WorkflowAnswer).question === "string" &&
+      typeof (a as WorkflowAnswer).answer === "string",
+  );
+}
+
+// Only ever added for the one turn right after a workflow's last question is
+// answered — this is what turns the shopper's answers into the "never invent
+// products" searchProducts-backed recommendation the workflow promises.
+export function workflowRecommendationPrompt(
+  topicLabel: string,
+  answers: WorkflowAnswer[],
+) {
+  const qa = answers
+    .map((a, i) => `${i + 1}. ${a.question}\nShopper's answer: ${a.answer}`)
+    .join("\n\n");
+  return (
+    `The shopper just finished the guided "${topicLabel}" flow, answering these ` +
+    `preconfigured questions in order:\n\n${qa}\n\nUse their answers to call ` +
+    `searchProducts and recommend the single best-fitting product (or a very ` +
+    `short shortlist if nothing clearly stands out). Explain briefly why it fits ` +
+    `their answers. Never invent a product or detail that didn't come from the tool.`
+  );
+}

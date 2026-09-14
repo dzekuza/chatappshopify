@@ -30,6 +30,7 @@ import {
 } from "../catalog-context.server";
 import prisma from "../db.server";
 import { describeRange, withMediaFragment } from "../media-timestamp";
+import { parseWorkflowAnswers, workflowRecommendationPrompt } from "../workflows";
 
 const MAX_MESSAGES = 20;
 
@@ -247,6 +248,18 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     Boolean(shopSettings?.geminiApiKey),
   );
   const language = String(body?.language ?? "auto").trim();
+  // Set only on the one turn right after the merchant finishes previewing a
+  // workflow's questions (see startWorkflow/submitAnswer in chat-preview.tsx)
+  // — the client tracks question-stepping entirely in-memory (there's no
+  // Conversation row to persist it on here), and only tells the server once
+  // it's time for the actual AI recommendation.
+  const workflowTopicLabel =
+    typeof body?.workflowTopicLabel === "string" ? body.workflowTopicLabel.trim() : "";
+  const workflowAnswers = parseWorkflowAnswers(body?.workflowAnswers);
+  const workflowRecommendationContext =
+    workflowTopicLabel && workflowAnswers.length > 0
+      ? workflowRecommendationPrompt(workflowTopicLabel, workflowAnswers)
+      : null;
   const collectionFilter = collectionIdFilter(body?.knowledgeCollections);
   const allowedCollectionGids = collectionGidSet(body?.knowledgeCollections);
   const knowledgeEntries = await prisma.knowledgeEntry.findMany({
@@ -300,6 +313,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       STOCK_TOOL_INSTRUCTION,
       ORDER_TOOL_INSTRUCTION,
       HANDOFF_TOOL_INSTRUCTION,
+      workflowRecommendationContext,
       // Last, so it overrides anything the merchant configured above.
       FACTUAL_ACCURACY_GUARDRAILS,
     ]

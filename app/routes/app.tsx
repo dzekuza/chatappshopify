@@ -7,6 +7,7 @@ import { authenticate, isBillingEnabled } from "../shopify.server";
 import prisma from "../db.server";
 import { ChatPreview } from "../components/settings/chat-preview";
 import type { KnowledgeCollection } from "../components/settings/knowledge-sync-section";
+import { parseQuestions } from "../workflows";
 
 // No billing gate: every shop can use the app on the Free plan, which is
 // capped at FREE_PLAN_MONTHLY_CONVERSATIONS new conversations a month (enforced
@@ -42,6 +43,19 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     ? (settings.knowledgeCollections as unknown as KnowledgeCollection[])
     : [];
 
+  // Backs the same floating preview's workflow topic buttons — only enabled
+  // workflows, same as what the real storefront widget offers.
+  const workflowRows = await prisma.workflow.findMany({
+    where: { shop: session.shop, enabled: true },
+    orderBy: { position: "asc" },
+  });
+  const workflows = workflowRows.map((w) => ({
+    id: w.id,
+    topicLabel: w.topicLabel,
+    description: w.description,
+    questions: parseQuestions(w.questions),
+  }));
+
   // eslint-disable-next-line no-undef
   return {
     apiKey: process.env.SHOPIFY_API_KEY || "",
@@ -49,12 +63,19 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     settings,
     shopName,
     knowledgeCollections,
+    workflows,
   };
 };
 
 export default function App() {
-  const { apiKey, isBillingEnabled, settings, shopName, knowledgeCollections } =
-    useLoaderData<typeof loader>();
+  const {
+    apiKey,
+    isBillingEnabled,
+    settings,
+    shopName,
+    knowledgeCollections,
+    workflows,
+  } = useLoaderData<typeof loader>();
 
   return (
     <AppProvider embedded apiKey={apiKey}>
@@ -83,6 +104,7 @@ export default function App() {
           geminiModel={settings.geminiModel}
           language={settings.language}
           knowledgeCollections={knowledgeCollections}
+          workflows={workflows}
         />
       ) : null}
     </AppProvider>
