@@ -244,8 +244,28 @@ export default function Plans() {
     navigation.state !== "idle" &&
     new URLSearchParams(navigation.location?.search).get("plan") === planName;
 
+  const isWelcome = searchParams.get("welcome") === "1";
+  const continueHref = `/app?${(() => {
+    const params = new URLSearchParams(searchParams);
+    params.delete("welcome");
+    params.delete("plan");
+    return params.toString();
+  })()}`;
+
   return (
-    <s-page heading="Choose a plan">
+    <s-page heading={isWelcome ? "Welcome to Orby" : "Choose a plan"}>
+      {isWelcome ? (
+        <s-banner tone="info" heading="Pick a plan to get started">
+          <s-paragraph>
+            Start on Free with no charge, or try a paid plan free for 7 days.
+            You can change plans any time from the Plans page.
+          </s-paragraph>
+          <s-button slot="secondary-actions" href={continueHref}>
+            Continue with Free
+          </s-button>
+        </s-banner>
+      ) : null}
+
       {error ? (
         <s-banner tone="critical" heading="Couldn't load plan details">
           <s-paragraph>{error}</s-paragraph>

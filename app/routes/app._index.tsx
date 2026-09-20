@@ -1,8 +1,8 @@
 import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { useLoaderData } from "react-router";
+import { redirect, useLoaderData } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { waitUntil } from "@vercel/functions";
-import { authenticate } from "../shopify.server";
+import { authenticate, isBillingEnabled } from "../shopify.server";
 import prisma from "../db.server";
 import { computeChatStats } from "../lib/chat-stats.server";
 import { runStoreAudit } from "../store-audit.server";
@@ -33,8 +33,24 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       enabled: true,
       systemPrompt: true,
       knowledgeCollections: true,
+      planPromptedAt: true,
     },
   });
+
+  // First open after install: land on the Plans page once so the merchant
+  // picks a plan (or Free) before anything else. Stamped before redirecting
+  // so it can't loop, and the Shopify params ride along or App Bridge can't
+  // initialise on the next page — see app.tsx. Skipped where the Billing API
+  // is unavailable, since /app/plans redirects straight back there.
+  if (isBillingEnabled && !settings.planPromptedAt) {
+    await prisma.widgetSettings.update({
+      where: { shop: session.shop },
+      data: { planPromptedAt: new Date() },
+    });
+    const params = new URLSearchParams(new URL(request.url).searchParams);
+    params.set("welcome", "1");
+    throw redirect(`/app/plans?${params.toString()}`);
+  }
 
   // Fallback for shops that installed before the store-audit feature shipped
   // (or whose afterAuth-triggered run failed) — the install hook is the

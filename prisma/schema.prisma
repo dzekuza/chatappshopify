@@ -77,6 +77,10 @@ model WidgetSettings {
   // real Shopify subscription of that name would be.
   planOverride                String?
   planOverrideRedeemedAt      DateTime?
+  // Set the first time the merchant is sent to the Plans page after install,
+  // so that welcome redirect happens once. Shops that existed before the
+  // column was added are backfilled by its migration and are never redirected.
+  planPromptedAt              DateTime?
   updatedAt                   DateTime  @updatedAt
 
   @@schema("chat_widget")
