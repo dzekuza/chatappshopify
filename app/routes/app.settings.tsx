@@ -320,8 +320,9 @@ export default function SettingsPage() {
             direct children. Wrapping them in this <form> (required so
             data-save-bar can track every field in one form) breaks that
             direct-child relationship, so the gap has to be added back
-            explicitly here. */}
-        <s-stack direction="block" gap="large">
+            explicitly here — including below the last section, where the
+            form meets the first card outside it. */}
+        <s-stack direction="block" gap="large" paddingBlockEnd="large">
           <WidgetSection
             enabled={form.enabled}
             welcomeMessage={form.welcomeMessage}
@@ -350,7 +351,6 @@ export default function SettingsPage() {
             isProPlan={isProPlan}
             onChange={update}
           />
-
         </s-stack>
       </form>
 
