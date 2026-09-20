@@ -25,7 +25,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   const settings = await prisma.widgetSettings.upsert({
     where: { shop: session.shop },
-    update: {},
+    // Shop in `update` too makes this an atomic upsert — the /app layout
+    // loader can create the same row concurrently on a first visit.
+    update: { shop: session.shop },
     create: { shop: session.shop },
     select: {
       enabled: true,
@@ -89,7 +91,7 @@ export default function Index() {
       key: "theme",
       label: "Add the widget to your theme",
       description:
-        "Open the theme editor and enable the AI Chat Widget block so it shows up on your storefront.",
+        "Open the theme editor and enable the Orby AI Chat Widget block so it shows up on your storefront.",
       // No stored flag for this — a shop only ever gets a real conversation
       // once the block is live on the storefront and enabled, so at least
       // one logged chat is a reliable (if lagging) proxy for it.
@@ -139,7 +141,7 @@ export default function Index() {
   const showThemeBanner = steps.widgetEnabled && !setupSteps[2].done;
 
   return (
-    <s-page heading="AI Chat Widget">
+    <s-page heading="Orby AI Chat Widget">
       <s-button
         slot="primary-action"
         href="/app/settings"

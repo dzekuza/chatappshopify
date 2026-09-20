@@ -7,11 +7,11 @@ export default function Privacy() {
   return (
     <div className={styles.page}>
       <div className={styles.content}>
-        <h1 className={styles.heading}>Privacy Policy — AI Chat Widget</h1>
+        <h1 className={styles.heading}>Privacy Policy — Orby AI Chat Widget</h1>
         <p className={styles.updated}>Last updated: {LAST_UPDATED}</p>
 
         <p>
-          AI Chat Widget (&ldquo;the App&rdquo;) is a Shopify app that adds an
+          Orby AI Chat Widget (&ldquo;the App&rdquo;) is a Shopify app that adds an
           AI-powered shopping assistant to a merchant&rsquo;s storefront. This
           policy explains what data the App collects, how it&rsquo;s used, and how
           it&rsquo;s handled when a shopper or merchant asks for it to be removed.

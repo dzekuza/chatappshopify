@@ -18,7 +18,7 @@ export default function App() {
   return (
     <div className={styles.index}>
       <div className={styles.content}>
-        <h1 className={styles.heading}>AI Chat Widget</h1>
+        <h1 className={styles.heading}>Orby AI Chat Widget</h1>
         <p className={styles.text}>
           A Gemini-powered shopping assistant for your storefront — answers
           questions using your real product data, no coding required.
@@ -34,7 +34,7 @@ export default function App() {
             custom color, position, and welcome message.
           </li>
           <li>
-            <strong>Drop-in setup</strong>. Add the &ldquo;AI Chat Widget&rdquo; block in
+            <strong>Drop-in setup</strong>. Add the &ldquo;Orby AI Chat Widget&rdquo; block in
             your theme editor — no code changes needed.
           </li>
         </ul>

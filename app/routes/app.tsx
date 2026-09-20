@@ -32,7 +32,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   if (!settings) {
     settings = await prisma.widgetSettings.upsert({
       where: { shop: session.shop },
-      update: {},
+      // Shop in `update` too makes Prisma emit a native atomic upsert; the
+      // Home loader upserts this row concurrently on a first visit.
+      update: { shop: session.shop },
       create: { shop: session.shop },
     });
   }
