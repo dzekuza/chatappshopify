@@ -9,6 +9,8 @@ export type HeadlessSectionProps = {
   storefrontOrigins: string[];
   /** What the last catalogue sync found the storefront to be built with. */
   detectedPlatform: "online-store" | "headless" | "unknown";
+  /** Skip the collapsed teaser — used by the dedicated install page. */
+  defaultExpanded?: boolean;
 };
 
 type Snippet = { id: string; label: string; code: string; caption: string };
@@ -25,13 +27,16 @@ export function HeadlessSection({
   embed,
   storefrontOrigins,
   detectedPlatform,
+  defaultExpanded = false,
 }: HeadlessSectionProps) {
   const fetcher = useFetcher<{ ok: boolean; origins: string[] }>();
   const shopify = useAppBridge();
 
   const [origins, setOrigins] = useState(storefrontOrigins.join("\n"));
   const [copied, setCopied] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState(detectedPlatform === "headless");
+  const [expanded, setExpanded] = useState(
+    defaultExpanded || detectedPlatform === "headless",
+  );
 
   const isSaving = fetcher.state !== "idle";
   const wasSaving = useRef(false);

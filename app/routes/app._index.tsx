@@ -153,6 +153,9 @@ export default function Index() {
       <s-button slot="secondary-actions" href="/app/activity" icon="chat">
         View conversations
       </s-button>
+      <s-button slot="secondary-actions" href="/app/headless" icon="code">
+        Install on headless
+      </s-button>
 
       {showThemeBanner ? (
         <s-section>
@@ -161,9 +164,14 @@ export default function Index() {
               The widget is enabled, but we can&rsquo;t automatically tell
               whether it&rsquo;s been added to your theme yet. If shoppers
               don&rsquo;t see the chat bubble, add it from the theme editor.
+              On a Hydrogen or other headless storefront, use the headless
+              install instead.
             </s-paragraph>
             <s-button slot="secondary-actions" href={addToThemeUrl} target="_blank">
               Add to theme
+            </s-button>
+            <s-button slot="secondary-actions" href="/app/headless">
+              Install on headless
             </s-button>
           </s-banner>
         </s-section>
