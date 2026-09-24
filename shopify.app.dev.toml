@@ -12,7 +12,7 @@ embedded = true
 # false, same as the prod config: this app is also hosted (ai-chat-widget-dev on
 # Vercel), so letting `shopify app dev` rewrite application_url to a tunnel breaks
 # the hosted dev app the moment the tunnel dies.
-automatically_update_urls_on_dev = false
+automatically_update_urls_on_dev = true
 
 [webhooks]
 api_version = "2026-07"
@@ -52,7 +52,7 @@ api_version = "unstable"
 subscription = []
 
 [access_scopes]
-scopes = "read_files,write_files,read_orders,read_products"
+scopes = "read_files,write_files,read_metaobjects,read_orders,read_products"
 optional_scopes = [ ]
 use_legacy_install_flow = false
 

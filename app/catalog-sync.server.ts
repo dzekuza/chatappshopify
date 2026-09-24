@@ -16,6 +16,11 @@ import {
 // the searchProducts tool. What lives here is the slow-moving stuff: titles,
 // handles, URLs, product types, options, collection membership, price bands.
 //
+// Custom content (metaobjects — workout videos, FAQs, etc.) is synced too, flattened
+// to text, so the assistant can answer about content that isn't a product. That needs
+// the read_metaobjects scope; without it the query errors and the sync carries on
+// with no entries rather than failing.
+//
 // Page URLs come from the public sitemap rather than the Admin pages API,
 // which needs the read_content scope this app doesn't request (adding a scope
 // forces every existing merchant to re-authorise).
@@ -29,6 +34,9 @@ import {
 const PRODUCT_PAGE_SIZE = 100;
 const MAX_PRODUCTS = 2000;
 const MAX_PAGES = 500;
+const MAX_ENTRIES = 500;
+const ENTRIES_PAGE_SIZE = 100;
+const MAX_ENTRY_VALUE_CHARS = 400;
 const MAX_DESCRIPTION_CHARS = 500;
 const FETCH_TIMEOUT_MS = 8000;
 // Matches the store audit's proven crawl budget — this runs synchronously in
@@ -83,6 +91,95 @@ const PRODUCTS_QUERY = `#graphql
       }
     }
   }`;
+
+type EntryRow = { entryId: string; type: string; title: string; content: string };
+
+type MetaobjectNode = {
+  id: string;
+  type: string;
+  handle: string;
+  displayName: string | null;
+  fields: {
+    key: string;
+    value: string | null;
+    reference?: { displayName?: string | null } | null;
+  }[];
+};
+
+const DEFINITIONS_QUERY = `#graphql
+  query CatalogMetaobjectDefinitions {
+    metaobjectDefinitions(first: 50) { nodes { type } }
+  }`;
+
+const ENTRIES_QUERY = `#graphql
+  query CatalogMetaobjects($type: String!, $first: Int!, $after: String) {
+    metaobjects(type: $type, first: $first, after: $after) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        id
+        type
+        handle
+        displayName
+        fields {
+          key
+          value
+          reference { ... on Metaobject { displayName } }
+        }
+      }
+    }
+  }`;
+
+// URLs (video files, thumbnails) and raw GIDs are noise to the assistant; a
+// reference is replaced by the name of what it points at.
+function flattenEntry(node: MetaobjectNode): EntryRow {
+  const parts: string[] = [];
+  for (const field of node.fields ?? []) {
+    const value = (field.reference?.displayName ?? field.value ?? "").trim();
+    if (!value || /^https?:\/\//i.test(value) || value.startsWith("gid://")) continue;
+    parts.push(`${field.key.replace(/_/g, " ")}: ${value.slice(0, MAX_ENTRY_VALUE_CHARS)}`);
+  }
+  return {
+    entryId: node.id,
+    type: node.type,
+    title: node.displayName || node.handle,
+    content: parts.join("; "),
+  };
+}
+
+async function fetchMetaobjectEntries(
+  admin: AdminGraphqlClient,
+  deadline: number,
+): Promise<EntryRow[]> {
+  const entries: EntryRow[] = [];
+  try {
+    const definitions = await admin.graphql(DEFINITIONS_QUERY);
+    const definitionsJson = await definitions.json();
+    if (definitionsJson?.errors || !definitionsJson?.data) return entries;
+
+    const types: string[] = (definitionsJson.data.metaobjectDefinitions?.nodes ?? [])
+      .map((node: { type: string }) => node.type)
+      // Shopify's own standard types (shopify--color-pattern, …) are not store content.
+      .filter((type: string) => !type.startsWith("shopify--") && !type.startsWith("app--"));
+
+    for (const type of types) {
+      let after: string | null = null;
+      while (entries.length < MAX_ENTRIES && Date.now() < deadline) {
+        const response: Response = await admin.graphql(ENTRIES_QUERY, {
+          variables: { type, first: ENTRIES_PAGE_SIZE, after },
+        });
+        const json = await response.json();
+        const connection = json?.data?.metaobjects;
+        if (!connection) break;
+        entries.push(...(connection.nodes as MetaobjectNode[]).map(flattenEntry));
+        if (!connection.pageInfo?.hasNextPage) break;
+        after = connection.pageInfo.endCursor;
+      }
+    }
+  } catch {
+    // Missing scope or a transient API error: keep whatever was fetched.
+  }
+  return entries.filter((entry) => entry.content).slice(0, MAX_ENTRIES);
+}
 
 async function fetchAllProducts(
   admin: AdminGraphqlClient,
@@ -211,9 +308,10 @@ export async function syncCatalog(shop: string, admin: AdminGraphqlClient) {
   const deadline = Date.now() + TOTAL_BUDGET_MS;
 
   try {
-    const [{ products, complete }, storefront] = await Promise.all([
+    const [{ products, complete }, storefront, entries] = await Promise.all([
       fetchAllProducts(admin, deadline),
       resolveStorefront(shop, admin),
+      fetchMetaobjectEntries(admin, deadline),
     ]);
 
     const storeUrl = storefront.url;
@@ -248,6 +346,10 @@ export async function syncCatalog(shop: string, admin: AdminGraphqlClient) {
     await prisma.$transaction([
       prisma.catalogProduct.deleteMany({ where: { shop } }),
       prisma.catalogProduct.createMany({ data: productRows }),
+      prisma.catalogEntry.deleteMany({ where: { shop } }),
+      prisma.catalogEntry.createMany({
+        data: entries.map((entry) => ({ shop, ...entry, syncedAt: new Date() })),
+      }),
       prisma.storePage.deleteMany({ where: { shop } }),
       prisma.storePage.createMany({
         data: pages.map((page) => ({
@@ -266,6 +368,7 @@ export async function syncCatalog(shop: string, admin: AdminGraphqlClient) {
         status: complete ? "ready" : "partial",
         productCount: productRows.length,
         pageCount: pages.length,
+        entryCount: entries.length,
         storeUrl,
         platform: storefront.platform,
         lastRunAt: new Date(),

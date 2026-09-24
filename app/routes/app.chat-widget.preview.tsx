@@ -26,6 +26,7 @@ import {
 import {
   catalogOverviewPrompt,
   storePagesPrompt,
+  catalogEntriesPrompt,
   storefrontPrompt,
 } from "../catalog-context.server";
 import prisma from "../db.server";
@@ -272,7 +273,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   // The synced catalogue snapshot and page index (see catalog-sync.server.ts).
   // Both are orientation only — the snapshot deliberately holds no inventory,
   // so availability still comes from the live searchProducts call below.
-  const [catalogProducts, catalogSync, storePages] = await Promise.all([
+  const [catalogProducts, catalogSync, storePages, catalogEntries] = await Promise.all([
     prisma.catalogProduct.findMany({
       where: { shop: session.shop },
       select: {
@@ -294,6 +295,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       select: { url: true, title: true, type: true },
       orderBy: { type: "asc" },
     }),
+    prisma.catalogEntry.findMany({
+      where: { shop: session.shop },
+      select: { type: true, title: true, content: true },
+      orderBy: [{ type: "asc" }, { title: "asc" }],
+    }),
   ]);
 
   const google = createGoogleGenerativeAI({ apiKey });
@@ -309,6 +315,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       knowledgeBasePrompt(knowledgeEntries),
       catalogOverviewPrompt(catalogProducts),
       storePagesPrompt(storePages),
+      catalogEntriesPrompt(catalogEntries),
       storefrontPrompt(catalogSync?.storeUrl ?? null, catalogSync?.platform ?? null),
       STOCK_TOOL_INSTRUCTION,
       ORDER_TOOL_INSTRUCTION,

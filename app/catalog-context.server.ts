@@ -1,4 +1,4 @@
-import type { CatalogProduct, StorePage } from "@prisma/client";
+import type { CatalogEntry, CatalogProduct, StorePage } from "@prisma/client";
 
 // Turns the synced catalog snapshot into compact system-prompt context.
 //
@@ -100,6 +100,35 @@ export function storePagesPrompt(pages: Pick<StorePage, "url" | "title" | "type"
   const more = pages.length - listed.length;
 
   return `These are this store's pages and collection URLs. When a shopper needs one of them, link them to the exact URL below — never invent a URL or guess a path that isn't listed here:\n\n${lines.join("\n")}${more > 0 ? `\n(and ${more} more)` : ""}`;
+}
+
+const MAX_ENTRY_CHARS = 14000;
+
+// The store's custom content (metaobjects such as workout videos or FAQs),
+// grouped by type. This is real store data, so it may be quoted, but it says
+// nothing about stock or price.
+export function catalogEntriesPrompt(
+  entries: Pick<CatalogEntry, "type" | "title" | "content">[],
+) {
+  if (entries.length === 0) return "";
+
+  const byType = new Map<string, string[]>();
+  let used = 0;
+  let omitted = 0;
+  for (const entry of entries) {
+    const line = `- ${entry.title} — ${entry.content}`;
+    if (used + line.length > MAX_ENTRY_CHARS) {
+      omitted += 1;
+      continue;
+    }
+    used += line.length;
+    byType.set(entry.type, [...(byType.get(entry.type) ?? []), line]);
+  }
+
+  const sections = [...byType.entries()].map(
+    ([type, lines]) => `${type.replace(/_/g, " ")}:\n${lines.join("\n")}`,
+  );
+  return `This is the store's own content (not products), synced from its custom data. Use it to answer questions about it, for example workouts, exercises or programmes, and do not say you lack the information when it is listed here:\n\n${sections.join("\n\n")}${omitted > 0 ? `\n(and ${omitted} more entries)` : ""}`;
 }
 
 // Tells the assistant where the storefront actually lives. It matters most on

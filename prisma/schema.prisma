@@ -254,12 +254,33 @@ model StorePage {
   @@schema("chat_widget")
 }
 
+// Custom content entries (Shopify metaobjects — e.g. a merchant's workout videos,
+// FAQs, team members) flattened to text so the assistant can answer questions
+// about content that isn't a product. Needs the read_metaobjects scope; shops
+// that haven't re-authorised simply have none.
+model CatalogEntry {
+  id       String   @id @default(cuid())
+  shop     String
+  entryId  String
+  // The metaobject definition type, e.g. "problem_video".
+  type     String
+  title    String
+  // "field: value; field: value" — references resolved to the target's name.
+  content  String
+  syncedAt DateTime @default(now())
+
+  @@unique([shop, entryId])
+  @@index([shop])
+  @@schema("chat_widget")
+}
+
 model CatalogSync {
   id           String    @id @default(cuid())
   shop         String    @unique
   status       String    @default("pending")
   productCount Int       @default(0)
   pageCount    Int       @default(0)
+  entryCount   Int       @default(0)
   // The storefront the last sync actually crawled, and how it's built:
   // "online-store" (Liquid theme), "headless" (Hydrogen/Oxygen or a custom
   // framework) or "unknown". Detected empirically — the Admin API exposes no
