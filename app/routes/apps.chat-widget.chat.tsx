@@ -208,6 +208,29 @@ function buildProductQuery(keywords: string | undefined, collectionFilter: strin
   return [keywords?.trim(), collectionFilter].filter(Boolean).join(" AND ");
 }
 
+// On a headless (Hydrogen/Oxygen) store, `onlineStoreUrl` points at the
+// Shopify-hosted default `*.myshopify.com` domain — a product can still be
+// published to that classic "Online Store" sales channel even though the
+// shop never shows it to anyone — not the real storefront (e.g.
+// https://ohubo.com) configured in catalogSync.storeUrl, so it isn't a link
+// a shopper should ever be handed. Prefer the configured storefront base
+// there; elsewhere onlineStoreUrl (or the relative-path fallback, which
+// resolves correctly since the widget only ever runs embedded on the
+// storefront it's searching) is still right.
+function buildProductUrl(
+  product: { handle?: unknown; onlineStoreUrl?: unknown },
+  catalogSync: { storeUrl: string | null; platform: string | null } | null,
+) {
+  const handle = product.handle ? String(product.handle) : null;
+  if (catalogSync?.platform === "headless" && catalogSync.storeUrl && handle) {
+    return `${catalogSync.storeUrl}/products/${handle}`;
+  }
+  return (
+    (product.onlineStoreUrl as string | undefined) ||
+    (handle ? `/products/${handle}` : null)
+  );
+}
+
 // Raw collection GIDs (not the query-string fragment collectionIdFilter
 // builds) for the code-side filtering path above — compared directly
 // against the `collections(first: N) { nodes { id } }` a search result
@@ -428,10 +451,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     const customerPhone =
       typeof contact.phone === "string" ? contact.phone.trim() : "";
 
-    if (!customerName || (!customerEmail && !customerPhone)) {
+    const customerEmailValid =
+      !!customerEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail);
+
+    if (!customerName || !customerEmailValid) {
       return cors(
         new Response(
-          "Name and either an email or phone number are required to start a conversation",
+          "Name and a valid email address are required to start a conversation",
           { status: 400 },
         ),
       );
@@ -858,11 +884,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           // /products/<handle> is the same relative-path fallback
           // fetchFeaturedProducts() already relies on client-side, and
           // resolves correctly since the widget only ever runs embedded on
-          // the storefront it's searching.
+          // the storefront it's searching. See buildProductUrl for the
+          // headless-storefront override.
           const mapped = products.slice(0, 5).map((p: Record<string, unknown>) => ({
             title: p.title,
             handle: p.handle,
-            url: p.onlineStoreUrl || (p.handle ? `/products/${p.handle}` : null),
+            url: buildProductUrl(p, catalogSync),
             price: (p.priceRangeV2 as { minVariantPrice?: unknown } | undefined)
               ?.minVariantPrice,
             image: (p.featuredImage as { url?: unknown } | undefined)?.url,

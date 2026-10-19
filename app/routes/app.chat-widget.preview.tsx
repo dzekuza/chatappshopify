@@ -104,6 +104,29 @@ function buildProductQuery(keywords: string | undefined, collectionFilter: strin
   return [keywords?.trim(), collectionFilter].filter(Boolean).join(" AND ");
 }
 
+// See apps.chat-widget.chat.tsx's buildProductUrl — on a headless
+// (Hydrogen/Oxygen) store, `onlineStoreUrl` points at the Shopify-hosted
+// default `*.myshopify.com` domain, not the real storefront (e.g.
+// https://ohubo.com) configured in catalogSync.storeUrl, so it isn't a link
+// to hand the merchant testing their assistant. Prefer the configured
+// storefront base there; elsewhere, fall back to the shop's own absolute
+// domain since this preview opens links from inside the Shopify admin
+// iframe (unlike the storefront widget, a relative path won't do).
+function buildProductUrl(
+  product: { handle?: unknown; onlineStoreUrl?: unknown },
+  catalogSync: { storeUrl: string | null; platform: string | null } | null,
+  shop: string,
+) {
+  const handle = product.handle ? String(product.handle) : null;
+  if (catalogSync?.platform === "headless" && catalogSync.storeUrl && handle) {
+    return `${catalogSync.storeUrl}/products/${handle}`;
+  }
+  return (
+    (product.onlineStoreUrl as string | undefined) ||
+    (handle ? `https://${shop}/products/${handle}` : null)
+  );
+}
+
 function collectionGidSet(knowledgeCollections: unknown): Set<string> {
   const collections = Array.isArray(knowledgeCollections)
     ? (knowledgeCollections as KnowledgeCollection[])
@@ -439,13 +462,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           // storefront widget (apps.chat-widget.chat.tsx), this preview
           // opens links from inside the Shopify admin iframe, so the
           // fallback needs the shop's own absolute domain, not a relative
-          // path.
+          // path. See buildProductUrl for the headless-storefront override.
           const mapped = products.slice(0, 5).map((p: Record<string, unknown>) => ({
             title: p.title,
             handle: p.handle,
-            url:
-              p.onlineStoreUrl ||
-              (p.handle ? `https://${session.shop}/products/${p.handle}` : null),
+            url: buildProductUrl(p, catalogSync, session.shop),
             price: (p.priceRangeV2 as { minVariantPrice?: unknown } | undefined)
               ?.minVariantPrice,
             image: (p.featuredImage as { url?: unknown } | undefined)?.url,

@@ -520,6 +520,13 @@
   margin-bottom: 2px;
 }
 
+.aicw-message-paragraph a,
+.aicw-message-list a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .aicw-message-video {
   display: block;
   max-width: 100%;

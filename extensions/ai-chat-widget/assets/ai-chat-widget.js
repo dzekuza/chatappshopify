@@ -377,8 +377,8 @@
       '<label class="aicw-field"><span>Name</span>' +
       '<input type="text" class="aicw-gate-name" autocomplete="name" required /></label>' +
       '<label class="aicw-field"><span>Email</span>' +
-      '<input type="email" class="aicw-gate-email" autocomplete="email" /></label>' +
-      '<label class="aicw-field"><span>Phone</span>' +
+      '<input type="email" class="aicw-gate-email" autocomplete="email" required /></label>' +
+      '<label class="aicw-field"><span>Phone (optional)</span>' +
       '<input type="tel" class="aicw-gate-phone" autocomplete="tel" /></label>' +
       '<p class="aicw-gate-error" hidden></p>' +
       '<button type="submit" class="aicw-gate-submit">Start chat</button>' +
@@ -451,7 +451,11 @@
     }
 
     function updateEmptyState() {
-      var hasMessages = history.length > 0;
+      // Keyed off the rendered messages, not `history` — startWorkflow()
+      // appends the first assistant bubble to messagesEl before it's pushed
+      // into `history` (that only happens once the stream finishes), so a
+      // history-based check re-hid messagesEl out from under it.
+      var hasMessages = messagesEl.children.length > 0;
       emptyState.hidden = hasMessages;
       messagesEl.hidden = !hasMessages;
       resetBtn.disabled = !hasMessages;
@@ -988,17 +992,17 @@
         return;
       }
 
-      if (!emailValid && !phone) {
-        gateError.textContent =
-          "Please enter a valid email address or phone number.";
+      if (!emailValid) {
+        gateError.textContent = "Please enter a valid email address.";
         gateError.hidden = false;
+        gateEmail.focus();
         return;
       }
 
       gateError.hidden = true;
       contact = {
         name: name,
-        email: emailValid ? email : "",
+        email: email,
         phone: phone,
       };
       storeContact(contact);
@@ -1046,19 +1050,75 @@
       return null;
     }
 
-    // Minimal **bold** support, applied within a single line/paragraph.
+    // Only ever used to build an <a> via createElement/textContent — never
+    // innerHTML — and only once the href passed the http(s) check below, so
+    // AI-generated or merchant-entered text can't inject markup or a
+    // javascript:/data: URL.
+    function isHttpUrl(value) {
+      try {
+        var protocol = new URL(value, window.location.href).protocol;
+        return protocol === "http:" || protocol === "https:";
+      } catch (err) {
+        return false;
+      }
+    }
+
+    function appendSafeLink(el, href, label) {
+      var a = document.createElement("a");
+      a.href = href;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      a.textContent = label;
+      el.appendChild(a);
+    }
+
+    // Trailing sentence punctuation (".", ",", "!", "?", ";", ":") is almost
+    // never part of the URL itself — strip it off an autolinked bare URL so
+    // "visit https://example.com." doesn't link-wrap the period.
+    var TRAILING_PUNCTUATION_REGEX = /[.,!?;:]+$/;
+    var MARKDOWN_LINK_PART_REGEX = /^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/;
+
+    // Minimal **bold** support plus [text](url) markdown links and bare
+    // http(s) URL autolinking, applied within a single line/paragraph.
     function appendInlineFormatted(el, text) {
-      var parts = text.split(/(\*\*[^*]+\*\*)/g);
+      var parts = text.split(
+        /(\[[^\]]+\]\(https?:\/\/[^\s)]+\)|\*\*[^*]+\*\*|https?:\/\/[^\s<>"')\]]+)/g,
+      );
       for (var i = 0; i < parts.length; i++) {
         var part = parts[i];
         if (!part) continue;
+
+        var linkMatch = part.match(MARKDOWN_LINK_PART_REGEX);
+        if (linkMatch) {
+          if (isHttpUrl(linkMatch[2])) {
+            appendSafeLink(el, linkMatch[2], linkMatch[1]);
+          } else {
+            el.appendChild(document.createTextNode(part));
+          }
+          continue;
+        }
+
         if (part.slice(0, 2) === "**" && part.slice(-2) === "**" && part.length > 4) {
           var strong = document.createElement("strong");
           strong.textContent = part.slice(2, -2);
           el.appendChild(strong);
-        } else {
-          el.appendChild(document.createTextNode(part));
+          continue;
         }
+
+        if (/^https?:\/\//.test(part)) {
+          var trailingMatch = part.match(TRAILING_PUNCTUATION_REGEX);
+          var trailing = trailingMatch ? trailingMatch[0] : "";
+          var url = trailing ? part.slice(0, part.length - trailing.length) : part;
+          if (isHttpUrl(url)) {
+            appendSafeLink(el, url, url);
+            if (trailing) el.appendChild(document.createTextNode(trailing));
+          } else {
+            el.appendChild(document.createTextNode(part));
+          }
+          continue;
+        }
+
+        el.appendChild(document.createTextNode(part));
       }
     }
 
