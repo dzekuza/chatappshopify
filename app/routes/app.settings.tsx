@@ -143,6 +143,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const position = String(payload.position ?? "bottom-right");
   const headerTitle =
     String(payload.headerTitle ?? "").trim() || "Chat with us";
+  const agentLabel =
+    String(payload.agentLabel ?? "").trim() || "Support agent";
   const cornerStyle =
     payload.cornerStyle === "square" ? "square" : "rounded";
   const geminiModel = String(payload.geminiModel ?? FREE_TIER_DEFAULT_MODEL);
@@ -182,6 +184,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         iconUrl,
         position,
         headerTitle,
+        agentLabel,
         cornerStyle,
         geminiModel,
         geminiApiKey,
@@ -197,6 +200,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         iconUrl,
         position,
         headerTitle,
+        agentLabel,
         cornerStyle,
         geminiModel,
         geminiApiKey,
@@ -336,6 +340,7 @@ export default function SettingsPage() {
             iconUrl={form.iconUrl}
             position={form.position}
             headerTitle={form.headerTitle}
+            agentLabel={form.agentLabel}
             cornerStyle={form.cornerStyle}
             isUploadingIcon={isUploadingIcon}
             iconUploadError={iconUploadError}

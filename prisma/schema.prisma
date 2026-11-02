@@ -48,6 +48,9 @@ model WidgetSettings {
   iconUrl                     String?
   position                    String    @default("bottom-right")
   headerTitle                 String    @default("Chat with us")
+  // Label shown above a human (not AI) reply in the storefront widget, e.g.
+  // "Support agent" or a merchant-chosen name like "Ohubo team member".
+  agentLabel                  String    @default("Support agent")
   cornerStyle                 String    @default("rounded")
   geminiModel                 String    @default("gemini-3.5-flash-lite")
   geminiApiKey                String?

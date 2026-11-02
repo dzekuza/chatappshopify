@@ -15,6 +15,7 @@ export type AppearanceSectionProps = {
   iconUrl: string | null;
   position: string;
   headerTitle: string;
+  agentLabel: string;
   cornerStyle: string;
   isUploadingIcon: boolean;
   iconUploadError: string | null;
@@ -28,6 +29,7 @@ export function AppearanceSection({
   iconUrl,
   position,
   headerTitle,
+  agentLabel,
   cornerStyle,
   isUploadingIcon,
   iconUploadError,
@@ -111,6 +113,18 @@ export function AppearanceSection({
           onChange={(event: Event) =>
             onChange(
               "headerTitle",
+              (event.currentTarget as HTMLInputElement).value,
+            )
+          }
+        />
+        <s-text-field
+          name="agentLabel"
+          label="Agent label"
+          value={agentLabel}
+          details="Shown above a human reply in the chat, e.g. &quot;Support agent&quot; or a team name."
+          onChange={(event: Event) =>
+            onChange(
+              "agentLabel",
               (event.currentTarget as HTMLInputElement).value,
             )
           }

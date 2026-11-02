@@ -1453,6 +1453,12 @@
       var el = document.createElement("div");
       el.className = "aicw-message aicw-message-" + role;
       renderMessageContent(el, text);
+      if (role === "agent") {
+        var labelEl = document.createElement("span");
+        labelEl.className = "aicw-message-agent-label";
+        labelEl.textContent = settings.agentLabel || "Support agent";
+        el.insertBefore(labelEl, el.firstChild);
+      }
       messagesEl.appendChild(el);
       updateEmptyState();
       if (isFollowing) scrollToBottom(false);

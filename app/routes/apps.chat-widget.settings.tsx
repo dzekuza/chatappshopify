@@ -41,6 +41,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     position: settings.position,
     iconUrl: settings.iconUrl,
     headerTitle: settings.headerTitle,
+      agentLabel: settings.agentLabel,
       cornerStyle: settings.cornerStyle,
       // Disabled rules are stripped server-side — merchant copy for a rule
       // that is switched off shouldn't be readable in the page source.
