@@ -740,6 +740,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   // shopper's browser to a specific product page — see the sentinel
   // appended to the response stream below.
   let navigateTarget: NavigateTarget | null = null;
+  // Set by the requestHumanHandoff tool so the widget can show a "connecting
+  // you with a team member" loader immediately, without waiting on its next
+  // messages.tsx poll — see the sentinel appended to the response stream
+  // below.
+  let handoffRequested = false;
 
   const result = streamText({
     model: google(geminiModel),
@@ -1084,6 +1089,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
             .describe("Short note on why they want a human, e.g. 'wants a refund'"),
         }),
         execute: async ({ reason }) => {
+          handoffRequested = true;
+
           await prisma.conversation.update({
             where: { shop_conversationId: { shop: session.shop, conversationId } },
             data: { needsHuman: true, needsHumanRequestedAt: new Date() },
@@ -1131,5 +1138,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       await recordAiFailure(session.shop, error, usesOwnKey).catch(() => {});
       return AI_UNAVAILABLE_MESSAGE;
     },
+    () => handoffRequested,
   );
 };

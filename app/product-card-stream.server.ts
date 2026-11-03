@@ -14,6 +14,12 @@ const PRODUCTS_SENTINEL_PREFIX = "\n\n<!--AICW_PRODUCTS:";
 const PRODUCTS_SENTINEL_SUFFIX = "-->";
 const NAVIGATE_SENTINEL_PREFIX = "\n\n<!--AICW_NAVIGATE:";
 const NAVIGATE_SENTINEL_SUFFIX = "-->";
+// Flag-only (no JSON payload) — appended when requestHumanHandoff was called
+// this turn, so the widget can show a "connecting you with a team member"
+// loader right away instead of waiting for its next messages.tsx poll (see
+// apps.chat-widget.messages.tsx, which also reports the conversation's
+// needsHuman/aiPaused state for the widget to resync from on load/reload).
+const HANDOFF_SENTINEL = "\n\n<!--AICW_HANDOFF-->";
 
 export type NavigateTarget = { url: string; title?: string | null };
 
@@ -135,6 +141,7 @@ export function textStreamWithProductCardsAndNavigation(
   getNavigateTarget: () => NavigateTarget | null,
   extraHeaders: Record<string, string> = {},
   onStreamError?: StreamErrorHandler,
+  getHandoffRequested?: () => boolean,
 ) {
   const stream = buildSentinelStream(
     result.textStream,
@@ -148,6 +155,9 @@ export function textStreamWithProductCardsAndNavigation(
       const navigateTarget = getNavigateTarget();
       if (navigateTarget && navigateTarget.url) {
         trailer += `${NAVIGATE_SENTINEL_PREFIX}${JSON.stringify(navigateTarget)}${NAVIGATE_SENTINEL_SUFFIX}`;
+      }
+      if (getHandoffRequested?.()) {
+        trailer += HANDOFF_SENTINEL;
       }
       return trailer;
     },

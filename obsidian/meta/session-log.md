@@ -19,6 +19,26 @@ Entry format:
 - **Next:** the first thing to do next session
 ```
 
+## 2026-11-03 — Storefront widget shows live human-handoff status
+- **Changed:** `requestHumanHandoff` (apps.chat-widget.chat.tsx) now sets a
+  `handoffRequested` flag, which `textStreamWithProductCardsAndNavigation`
+  (product-card-stream.server.ts) turns into a new flag-only
+  `AICW_HANDOFF` sentinel on the reply stream. The widget
+  (ai-chat-widget.js/.css) parses it in `extractProductCards` and shows a
+  "Connecting you with a team member…" loader via a new
+  `renderHandoffStatus()` / `.aicw-handoff-status` element between the
+  message list and composer. `apps.chat-widget.messages.tsx`'s existing 5s
+  poll now also returns `needsHuman`/`aiPaused`, so once a human agent
+  actually replies (aiPaused — see the AI-pause session below) the banner
+  switches to a "A team member has joined" badge, styled to match
+  `.aicw-message-agent`'s existing green exactly (a widget-parity review
+  caught a slightly-off shade on the first pass, fixed).
+- **Status:** typecheck/lint/build clean; widget-parity review confirmed the
+  admin chat preview needs no change (it has no persisted Conversation row,
+  so no handoff state to show — its stream helper never gets the sentinel
+  param). Not committed, not pushed.
+- **Next:** Commit and push.
+
 ## 2026-11-03 — Activity rebuilt as a two-column inbox page
 - **Changed:** Reworked the admin Activity section from separate list/detail
   pages into one two-column page. `app.activity.tsx` is now a layout route

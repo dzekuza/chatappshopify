@@ -612,6 +612,49 @@
   height: 14px;
 }
 
+/* Sits between the message list and the composer — a loader while a human
+   has been asked for but hasn't joined yet, then a badge once one actually
+   takes over and the AI stops answering (see renderHandoffStatus). Same
+   placement/shape convention as .aicw-attachment-preview above. */
+.aicw-handoff-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.aicw-handoff-status[hidden] {
+  display: none;
+}
+
+.aicw-handoff-waiting {
+  background: #f3f4f6;
+  color: rgba(26, 26, 26, 0.7);
+}
+
+/* Same green as .aicw-message-agent/.aicw-message-agent-label — both signal
+   "a human is involved", so they share one palette instead of two close but
+   different shades of green. */
+.aicw-handoff-joined {
+  background: #eaf7ee;
+  border: 1px solid #bfe6cb;
+  color: #2f8a4b;
+}
+
+.aicw-handoff-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.aicw-handoff-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
 /* Figma: https://www.figma.com/design/rofOs7HDouBaGx36STSZuP/PluginsShopify?node-id=365-3015 —
    a single horizontal row (attach, input, send) instead of the input
    stacked over a separate actions row. */

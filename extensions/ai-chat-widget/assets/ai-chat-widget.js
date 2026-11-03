@@ -267,6 +267,17 @@
     );
   }
 
+  // Used by the "a team member has joined" handoff-status badge — see
+  // renderHandoffStatus below.
+  function checkCircleIcon() {
+    return (
+      '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+      '<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.75"/>' +
+      '<path d="M8.5 12.5l2.25 2.25L15.5 10" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>' +
+      "</svg>"
+    );
+  }
+
   function greetingForNow() {
     var hour = new Date().getHours();
     if (hour < 12) return "Morning";
@@ -406,6 +417,7 @@
       closeIcon() +
       "</button>" +
       "</div>" +
+      '<div class="aicw-handoff-status" role="status" hidden></div>' +
       '<form class="aicw-form">' +
       '<input type="file" class="aicw-attach-input" accept="image/*" hidden />' +
       '<button type="button" class="aicw-icon-button aicw-attach" aria-label="Attach an image" title="Attach an image">' +
@@ -443,6 +455,13 @@
     var attachmentRemoveBtn = root.querySelector(".aicw-attachment-remove");
     var featuredProductsEl = root.querySelector(".aicw-featured-products");
     var featuredProductsHasProducts = false;
+    var handoffStatusEl = root.querySelector(".aicw-handoff-status");
+    // "none" | "waiting" | "joined" — see renderHandoffStatus below. Kept so
+    // a poll reporting aiPaused:false while we're still "waiting" (the usual
+    // case, before a human has actually replied) doesn't flicker the banner
+    // back to hidden between the sentinel setting it and the next poll
+    // confirming it.
+    var handoffStatus = "none";
 
     if (!uploadEndpoint) {
       attachBtn.disabled = true;
@@ -783,6 +802,40 @@
 
     initProactive();
 
+    // Shown above the composer: a loader while a human has been asked for
+    // but hasn't replied yet (requestHumanHandoff tool — see
+    // apps.chat-widget.chat.tsx), then a badge once one actually takes over
+    // and the AI stops answering (aiPaused — see
+    // conversation-handoff.server.ts). "none" hides it entirely.
+    function renderHandoffStatus(status) {
+      handoffStatus = status;
+      if (status === "none") {
+        handoffStatusEl.hidden = true;
+        handoffStatusEl.className = "aicw-handoff-status";
+        handoffStatusEl.innerHTML = "";
+        return;
+      }
+
+      handoffStatusEl.hidden = false;
+      if (status === "waiting") {
+        handoffStatusEl.className = "aicw-handoff-status aicw-handoff-waiting";
+        handoffStatusEl.innerHTML =
+          '<span class="aicw-typing">' +
+          '<span class="aicw-typing-dot"></span>' +
+          '<span class="aicw-typing-dot"></span>' +
+          '<span class="aicw-typing-dot"></span>' +
+          "</span>" +
+          "<span>Connecting you with a team member…</span>";
+      } else {
+        handoffStatusEl.className = "aicw-handoff-status aicw-handoff-joined";
+        handoffStatusEl.innerHTML =
+          '<span class="aicw-handoff-icon">' +
+          checkCircleIcon() +
+          "</span>" +
+          "<span>A team member has joined — they're replying here now.</span>";
+      }
+    }
+
     function pollForAgentReplies() {
       if (!messagesEndpoint || !contact) return;
       fetch(
@@ -796,12 +849,23 @@
           return res.ok ? res.json() : null;
         })
         .then(function (data) {
-          var incoming = (data && data.messages) || [];
+          if (!data) return;
+          var incoming = data.messages || [];
           incoming.forEach(function (m) {
             appendMessage("agent", m.content);
             history.push({ role: "assistant", content: m.content });
             lastAgentMessageAt = m.createdAt;
           });
+
+          if (data.aiPaused) {
+            renderHandoffStatus("joined");
+          } else if (data.needsHuman) {
+            renderHandoffStatus("waiting");
+          } else if (handoffStatus !== "none") {
+            // The merchant resumed the AI (or the request was never a real
+            // handoff) — drop the banner rather than leave it stale.
+            renderHandoffStatus("none");
+          }
         })
         .catch(function () {});
     }
@@ -908,6 +972,7 @@
       updateEmptyState();
       if (topicsEl) topicsEl.hidden = false;
       clearPendingAttachment();
+      renderHandoffStatus("none");
       lastAgentMessageAt = new Date(0).toISOString();
       try {
         window.sessionStorage.removeItem("aicw-conversation-id");
@@ -1167,11 +1232,25 @@
     // question's preset answers, rendered as buttons below the bubble.
     var WORKFLOW_OPTIONS_SENTINEL_REGEX =
       /\n\n<!--AICW_WORKFLOW_OPTIONS:(\[.*?\])-->/;
+    // Flag-only (no JSON payload) — appended when the assistant called
+    // requestHumanHandoff this turn. See renderHandoffStatus's "waiting"
+    // branch, which this drives for an instant loader instead of waiting on
+    // the next messages.tsx poll.
+    var HANDOFF_SENTINEL_REGEX = /\n\n<!--AICW_HANDOFF-->/;
 
     function extractProductCards(text) {
       var products = [];
       var navigateTarget = null;
       var workflowOptions = [];
+      var handoffRequested = false;
+
+      var handoffMatch = text.match(HANDOFF_SENTINEL_REGEX);
+      if (handoffMatch) {
+        handoffRequested = true;
+        text =
+          text.slice(0, handoffMatch.index) +
+          text.slice(handoffMatch.index + handoffMatch[0].length);
+      }
 
       var productsMatch = text.match(PRODUCTS_SENTINEL_REGEX);
       if (productsMatch) {
@@ -1216,6 +1295,7 @@
         products: products,
         navigateTarget: navigateTarget,
         workflowOptions: workflowOptions,
+        handoffRequested: handoffRequested,
       };
     }
 
@@ -1535,6 +1615,10 @@
         }
 
         var extracted = extractProductCards(full);
+
+        if (extracted.handoffRequested) {
+          renderHandoffStatus("waiting");
+        }
 
         // An empty reply means the AI has been paused for this conversation
         // (a human agent has taken over — see apps.chat-widget.chat.tsx) and

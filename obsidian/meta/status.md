@@ -14,15 +14,33 @@ updated: 2026-11-03
 
 ## Current focus
 
-Reworked the admin Activity section into a single two-column inbox-style
-page (conversation list + chat side by side) instead of separate list/detail
-pages — uncommitted, see "In progress" below.
+Storefront widget now shows live status for the human-handoff flow —
+uncommitted, see "In progress" below.
 
 ## Done recently
 
-- **Activity is now a two-column single page (uncommitted).**
-  `app/routes/app.activity.tsx` is now a layout route: a left column
-  (conversation list, in a `<s-scroll-box>`-wrapped `<s-table>`, fixed
+- **Storefront widget: handoff status UI (uncommitted).** When the AI calls
+  `requestHumanHandoff`, the widget now shows a "Connecting you with a team
+  member…" loader immediately (a new flag-only `AICW_HANDOFF` sentinel on
+  the reply stream — `product-card-stream.server.ts`'s
+  `textStreamWithProductCardsAndNavigation` gained an optional
+  `getHandoffRequested` param, set from a new `handoffRequested` flag in the
+  `requestHumanHandoff` tool's `execute` in `apps.chat-widget.chat.tsx`).
+  Once a human agent actually replies (`aiPaused` — see the AI-pause feature
+  below), it switches to a green "A team member has joined — they're
+  replying here now" badge, reusing `.aicw-message-agent`'s exact palette
+  (`#eaf7ee`/`#bfe6cb`/`#2f8a4b`) for visual consistency. `
+  apps.chat-widget.messages.tsx`'s poll response now also carries
+  `needsHuman`/`aiPaused` so the status stays correct across a page reload,
+  not just from the one-shot sentinel. New `renderHandoffStatus()` +
+  `.aicw-handoff-status` in `ai-chat-widget.js`/`.css`. Admin preview
+  deliberately untouched — it has no persisted Conversation row, so there's
+  no handoff state for it to show (confirmed by a widget-parity review: the
+  preview route streams via the plain `textStreamWithProductCards`, which
+  never gets the sentinel param, so nothing is half-wired).
+- **Activity is now a two-column single page** (committed & pushed,
+  `244de74`). `app/routes/app.activity.tsx` is now a layout route: a left
+  column (conversation list, in a `<s-scroll-box>`-wrapped `<s-table>`, fixed
   360px) and an `<Outlet />` right column. Two new/renamed child routes
   nest under it via React Router's flat-routes dot-nesting:
   `app.activity.$conversationId.tsx` (renamed from
@@ -62,14 +80,16 @@ pages — uncommitted, see "In progress" below.
 
 ## In progress
 
-- The two-column Activity layout above is finished and verified
-  (typecheck/lint/build clean, route nesting confirmed, Polaris props
-  checked) but **not committed, not pushed**. No database/migration
-  changes needed for it — it's routing/UI only.
+- The storefront handoff-status UI above is finished and verified
+  (typecheck/lint/build clean, a widget-parity review confirmed the admin
+  preview needs no matching change and found no visual clash — one color
+  mismatch it flagged between the new badge and the existing agent-message
+  green was fixed) but **not committed, not pushed**. No database/migration
+  changes needed for it — widget + one server route only.
 
 ## Next up
 
-- Commit and push the two-column Activity layout.
+- Commit and push the storefront handoff-status UI.
 - **Deploy the `shopify.app.dev.toml` config** — the `write_customers` scope
   change (and everything since) only went out for the prod config
   (`shopify app deploy --config ai-chat-app`, via `deploy-prod.yml` CI).
