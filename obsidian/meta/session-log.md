@@ -19,6 +19,25 @@ Entry format:
 - **Next:** the first thing to do next session
 ```
 
+## 2026-11-03 — Admin live-polling + AI pauses when a human agent takes over
+- **Changed:** Admin Activity pages (`app.activity.tsx`,
+  `app.activity_.$conversationId.tsx`) didn't revalidate after first load —
+  added a 5s `useRevalidator` poll to both. Added `Conversation.aiPaused`
+  (migration `20261103130000_add_ai_paused`, **not yet applied** — run
+  `npx prisma migrate deploy`) and `app/conversation-handoff.server.ts`
+  (`markHumanTookOver`), called from the admin reply action and
+  `telegram.webhook.tsx` so the AI stops replying to a shopper once a human
+  agent sends a message. `apps.chat-widget.chat.tsx` checks `aiPaused` and
+  returns an empty reply instead of calling Gemini; `ai-chat-widget.js`
+  drops the empty assistant bubble instead of showing a blank one. Admin
+  conversation page shows an "AI replies paused" banner with a "Resume AI"
+  button that clears the flag (never cleared automatically).
+- **Status:** `npm run typecheck`/`lint` clean. Not committed, not pushed,
+  migration not applied to any database.
+- **Next:** Apply the migration, commit, and verify in a real embedded
+  admin session (couldn't exercise this in-session — needs an authenticated
+  Shopify admin + a live Telegram-linked shop to see the full handoff path).
+
 ## 2026-11-03 — Committed, deployed prod scope config, and fixed a second security review round
 - **Changed:** Committed and pushed the chat-sync feature + ADR-0003 fix (`a828464`). A background
   review of that push flagged two more issues before production: `app/klaviyo.server.ts` switched from

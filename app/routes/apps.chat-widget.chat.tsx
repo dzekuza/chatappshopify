@@ -562,6 +562,18 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     });
   }
 
+  // A human agent has taken this conversation over (admin reply or Telegram
+  // reply — see conversation-handoff.server.ts). The shopper's message above
+  // is still saved and still relayed to Telegram, but the AI stays silent
+  // until the merchant explicitly resumes it — an empty reply here is the
+  // client's signal (ai-chat-widget.js) to drop the empty assistant bubble
+  // rather than show one that never fills in.
+  if (conversationRecord?.aiPaused) {
+    return cors(
+      plainTextResponse("", { "X-Conversation-Id": conversationId }),
+    );
+  }
+
   // Continuing a guided workflow — the shopper's message above is the answer
   // to the current question, not a free-form chat message.
   let workflowRecommendationContext: string | null = null;

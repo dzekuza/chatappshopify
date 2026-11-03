@@ -1535,6 +1535,23 @@
         }
 
         var extracted = extractProductCards(full);
+
+        // An empty reply means the AI has been paused for this conversation
+        // (a human agent has taken over — see apps.chat-widget.chat.tsx) and
+        // intentionally has nothing to say. Drop the placeholder bubble
+        // instead of leaving an empty one sitting in the thread; the
+        // shopper's message was still saved, and the agent's own reply will
+        // show up via the apps.chat-widget.messages.tsx poll below.
+        if (
+          !extracted.text.trim() &&
+          extracted.products.length === 0 &&
+          extracted.workflowOptions.length === 0 &&
+          !extracted.navigateTarget
+        ) {
+          assistantEl.remove();
+          return;
+        }
+
         renderMessageContent(assistantEl, extracted.text);
         if (extracted.products.length > 0) {
           // A sibling of the message bubble, not a child of it — so it can

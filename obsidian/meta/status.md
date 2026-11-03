@@ -14,12 +14,35 @@ updated: 2026-11-03
 
 ## Current focus
 
-No single active workstream — most recent work is the chat-start-to-CRM sync
-feature below (shipped to main and the prod Shopify config; dev config still
-needs its own manual deploy).
+Two small admin/chat UX fixes this session, both uncommitted:
+1. Admin Activity pages now poll (5s) instead of only loading once.
+2. The AI now pauses for a conversation once a human agent replies (admin or
+   Telegram), until the merchant explicitly resumes it.
 
 ## Done recently
 
+- **AI pause on human takeover.** New `Conversation.aiPaused` column
+  (migration `20261103130000_add_ai_paused`, schema updated, `prisma
+  generate` run — **migration not yet applied to the dev database**, since
+  `prisma migrate deploy`/`dev` are blocked by this session's permission
+  classifier; run `npx prisma migrate deploy` by hand before relying on the
+  column). New `app/conversation-handoff.server.ts` (`markHumanTookOver`)
+  called from both `app.activity_.$conversationId.tsx`'s reply action and
+  `telegram.webhook.tsx`'s reply handler — sets `aiPaused: true` and clears
+  `needsHuman`. `apps.chat-widget.chat.tsx` checks `aiPaused` right after
+  persisting the shopper's message and returns an empty reply (AI model
+  never called) instead of answering. The storefront widget
+  (`ai-chat-widget.js`) now removes the empty assistant bubble instead of
+  leaving a blank one when that happens. The admin conversation page shows
+  an "AI replies paused" banner with a "Resume AI" button
+  (`intent=resumeAi` form action) that clears the flag — it's never cleared
+  automatically.
+- **Admin Activity pages now poll.** Neither `app/routes/app.activity.tsx`
+  nor `app.activity_.$conversationId.tsx` ever re-fetched after the initial
+  load, so a merchant watching a conversation didn't see new shopper/Telegram
+  messages without a manual refresh. Both now poll via `useRevalidator`
+  every 5s (same cadence as the storefront widget's own poll), paused while
+  idle-submitting or navigating.
 - Starting a chat can create a Shopify customer (opt-in, off by default —
   `WidgetSettings.syncCustomersToShopify`) and/or a Klaviyo profile (opt-in
   via connecting an API key). Both create-only, never update an existing
@@ -34,12 +57,16 @@ needs its own manual deploy).
 
 ## In progress
 
-- Nothing left mid-change in code. `npm run typecheck`, `npm run lint`, and
-  `npm run build` are all clean. Committed (`a828464` + a follow-up commit
-  for the ADR-0004 fixes) and pushed to `main`.
+- Nothing left mid-change in code. `npm run typecheck` and `npm run lint`
+  are both clean for the AI-pause + admin-polling work above. **Not
+  committed, not pushed.** The new migration has not been applied to any
+  database yet — do that before deploying, or the `aiPaused` column won't
+  exist and the Prisma calls that read/write it will fail at runtime.
 
 ## Next up
 
+- Apply migration `20261103130000_add_ai_paused` (`npx prisma migrate
+  deploy`) and commit the AI-pause + admin-polling changes.
 - **Deploy the `shopify.app.dev.toml` config** — the `write_customers` scope
   change only went out for the prod config
   (`shopify app deploy --config ai-chat-app`, via `deploy-prod.yml` CI,
@@ -69,6 +96,6 @@ needs its own manual deploy).
 - **Deploy:** `git push` to `main` triggers Vercel (web app) + GitHub Actions
   (`shopify app deploy --config ai-chat-app`, prod Shopify config only); the
   dev app/config needs a manual deploy — see CLAUDE.md's "Deploying" section.
-- **Known issues:** none tracked separately; see [[changelog]] for recent
-  fixes. The dev-config scope deploy gap and the rate-limiting question
-  above are the two open items.
+- **Known issues:** the `aiPaused` migration above is written but unapplied;
+  the dev-config scope deploy gap and the rate-limiting question above are
+  otherwise the open items.

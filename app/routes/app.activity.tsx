@@ -1,5 +1,11 @@
+import { useEffect } from "react";
 import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { useLoaderData, useNavigate, useNavigation } from "react-router";
+import {
+  useLoaderData,
+  useNavigate,
+  useNavigation,
+  useRevalidator,
+} from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
@@ -99,6 +105,18 @@ export default function Activity() {
   const { conversations, stats } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const navigation = useNavigation();
+  const revalidator = useRevalidator();
+
+  // Poll for new conversations/messages so the list updates live, same
+  // cadence as the conversation detail page and the storefront widget.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (revalidator.state === "idle" && navigation.state === "idle") {
+        revalidator.revalidate();
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [revalidator, navigation.state]);
 
   // Opening a conversation is a client-side navigation that waits on that
   // route's loader — without this the table just sits there looking dead.

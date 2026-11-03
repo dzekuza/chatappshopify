@@ -162,6 +162,13 @@ model Conversation {
   customerPhone         String?
   needsHuman            Boolean   @default(false)
   needsHumanRequestedAt DateTime?
+  // Set the moment a human agent sends a reply (admin or Telegram — see
+  // conversation-handoff.server.ts) so the AI stops answering this shopper
+  // once a real person has taken over. Stays true until the merchant
+  // explicitly resumes the AI from the conversation page — it's never
+  // cleared automatically, since the agent may keep replying over several
+  // messages.
+  aiPaused              Boolean   @default(false)
   // Which proactive rule (WidgetSettings.proactiveRules[].id) opened this
   // conversation, if any. Null for chats the shopper started themselves —
   // that's how the merchant tells an earned conversation from a prompted one.

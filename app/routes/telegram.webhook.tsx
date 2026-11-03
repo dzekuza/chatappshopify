@@ -1,6 +1,7 @@
 import type { ActionFunctionArgs } from "react-router";
 import prisma from "../db.server";
 import { generateLinkCode, sendTelegramMessage } from "../telegram.server";
+import { markHumanTookOver } from "../conversation-handoff.server";
 
 // Public endpoint hit by Telegram — there is no Shopify session here. It is
 // authenticated by the secret token Telegram echoes back in a header, which
@@ -271,14 +272,7 @@ async function handleReply(
     },
   });
 
-  if (conversation.needsHuman) {
-    await prisma.conversation.update({
-      where: {
-        shop_conversationId: { shop: ref.shop, conversationId: ref.conversationId },
-      },
-      data: { needsHuman: false },
-    });
-  }
+  await markHumanTookOver(ref.shop, ref.conversationId);
 
   await sendTelegramMessage(
     chat,

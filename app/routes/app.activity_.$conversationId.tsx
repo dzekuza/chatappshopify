@@ -3,10 +3,18 @@ import type {
   HeadersFunction,
   LoaderFunctionArgs,
 } from "react-router";
-import { useLoaderData, useNavigation, Form } from "react-router";
+import { useEffect } from "react";
+import {
+  useLoaderData,
+  useNavigation,
+  useRevalidator,
+  useFetcher,
+  Form,
+} from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+import { markHumanTookOver } from "../conversation-handoff.server";
 import { TimestampedVideo } from "../components/timestamped-video";
 import { ChatMessageBody } from "../components/chat-message-body";
 
@@ -94,6 +102,15 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   }
 
   const formData = await request.formData();
+
+  if (formData.get("intent") === "resumeAi") {
+    await prisma.conversation.update({
+      where: { shop_conversationId: { shop: session.shop, conversationId } },
+      data: { aiPaused: false },
+    });
+    return Response.json({ ok: true });
+  }
+
   const content = String(formData.get("content") ?? "").trim();
 
   if (!content) {
@@ -109,12 +126,9 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     },
   });
 
-  if (conversation.needsHuman) {
-    await prisma.conversation.update({
-      where: { shop_conversationId: { shop: session.shop, conversationId } },
-      data: { needsHuman: false },
-    });
-  }
+  // A human has now joined this conversation — the AI stops answering it
+  // until the merchant explicitly resumes it above.
+  await markHumanTookOver(session.shop, conversationId);
 
   return Response.json({ ok: true });
 };
@@ -123,9 +137,24 @@ export default function ActivityThread() {
   const { conversationId, conversation, messages } =
     useLoaderData<typeof loader>();
   const navigation = useNavigation();
+  const revalidator = useRevalidator();
+  const resumeAiFetcher = useFetcher();
+  const isResumingAi = resumeAiFetcher.state !== "idle";
   const isReplying =
     navigation.state === "submitting" &&
     navigation.formAction?.endsWith(`/app/activity/${conversationId}`);
+
+  // Mirrors the storefront widget's 5s poll (apps.chat-widget.messages.tsx)
+  // so a merchant watching this page sees new shopper/Telegram messages
+  // without manually refreshing.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (revalidator.state === "idle" && navigation.state === "idle") {
+        revalidator.revalidate();
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [revalidator, navigation.state]);
 
   return (
     <s-page heading={conversation?.customerName || "Conversation"}>
@@ -136,6 +165,27 @@ export default function ActivityThread() {
       {conversation?.needsHuman ? (
         <s-banner heading="Needs attention" tone="warning">
           This shopper asked to talk to a human. Reply below to resolve it.
+        </s-banner>
+      ) : null}
+
+      {conversation?.aiPaused ? (
+        <s-banner heading="AI replies paused" tone="info">
+          <s-stack direction="block" gap="small">
+            <s-paragraph>
+              A team member has joined this conversation, so the AI won&apos;t
+              reply to this shopper until you resume it.
+            </s-paragraph>
+            <resumeAiFetcher.Form method="post">
+              <input type="hidden" name="intent" value="resumeAi" />
+              <s-button
+                type="submit"
+                disabled={isResumingAi}
+                {...(isResumingAi ? { loading: true } : {})}
+              >
+                {isResumingAi ? "Resuming…" : "Resume AI"}
+              </s-button>
+            </resumeAiFetcher.Form>
+          </s-stack>
         </s-banner>
       ) : null}
 
