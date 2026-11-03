@@ -3,11 +3,9 @@ import type {
   HeadersFunction,
   LoaderFunctionArgs,
 } from "react-router";
-import { useEffect } from "react";
 import {
   useLoaderData,
   useNavigation,
-  useRevalidator,
   useFetcher,
   Form,
 } from "react-router";
@@ -137,30 +135,37 @@ export default function ActivityThread() {
   const { conversationId, conversation, messages } =
     useLoaderData<typeof loader>();
   const navigation = useNavigation();
-  const revalidator = useRevalidator();
   const resumeAiFetcher = useFetcher();
   const isResumingAi = resumeAiFetcher.state !== "idle";
   const isReplying =
     navigation.state === "submitting" &&
     navigation.formAction?.endsWith(`/app/activity/${conversationId}`);
 
-  // Mirrors the storefront widget's 5s poll (apps.chat-widget.messages.tsx)
-  // so a merchant watching this page sees new shopper/Telegram messages
-  // without manually refreshing.
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (revalidator.state === "idle" && navigation.state === "idle") {
-        revalidator.revalidate();
-      }
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [revalidator, navigation.state]);
+  // No polling here — app.activity.tsx's poll already revalidates this
+  // route's loader too, since it's always mounted alongside this one as
+  // its <Outlet /> child.
 
+  // Content only — this route nests under app.activity.tsx's <Outlet />,
+  // which already owns the <s-page> and the conversation list in the left
+  // column, so this is just the right-hand chat panel.
   return (
-    <s-page heading={conversation?.customerName || "Conversation"}>
-      <s-link slot="breadcrumb-actions" href="/app/activity">
-        Activity
-      </s-link>
+    <s-stack direction="block" gap="base">
+      <s-stack direction="block" gap="small-200">
+        <s-stack direction="inline" gap="small" alignItems="center">
+          <s-text type="strong">
+            {conversation?.customerName || "Conversation"}
+          </s-text>
+          {conversation?.customerEmail ? (
+            <s-link href={`mailto:${conversation.customerEmail}`}>
+              {conversation.customerEmail}
+            </s-link>
+          ) : null}
+          {conversation?.customerPhone ? (
+            <s-text color="subdued">{conversation.customerPhone}</s-text>
+          ) : null}
+        </s-stack>
+        <s-text color="subdued">{conversationId}</s-text>
+      </s-stack>
 
       {conversation?.needsHuman ? (
         <s-banner heading="Needs attention" tone="warning">
@@ -189,10 +194,14 @@ export default function ActivityThread() {
         </s-banner>
       ) : null}
 
-      <s-section heading="Messages">
-        {messages.length === 0 ? (
-          <s-paragraph>This conversation could not be found.</s-paragraph>
-        ) : (
+      {messages.length === 0 ? (
+        <s-paragraph>This conversation could not be found.</s-paragraph>
+      ) : (
+        <s-scroll-box
+          maxBlockSize="480px"
+          accessibilityLabel="Messages"
+          accessibilityRole="region"
+        >
           <s-stack direction="block" gap="base">
             {messages.map((m) => {
               const { text, media } = splitMessageMedia(m.content);
@@ -229,52 +238,31 @@ export default function ActivityThread() {
               );
             })}
           </s-stack>
-        )}
-      </s-section>
+        </s-scroll-box>
+      )}
 
-      <s-section heading="Reply">
-        <Form method="post" key={messages.length}>
-          <s-stack direction="block" gap="base">
-            <s-text-area
-              name="content"
-              label="Message"
-              labelAccessibilityVisibility="exclusive"
-              placeholder="Reply to this shopper — they'll see it in the chat widget."
-              rows={3}
-              disabled={isReplying}
-            />
-            <s-button
-              type="submit"
-              variant="primary"
-              icon="send"
-              disabled={isReplying}
-              {...(isReplying ? { loading: true } : {})}
-            >
-              {isReplying ? "Sending…" : "Send reply"}
-            </s-button>
-          </s-stack>
-        </Form>
-      </s-section>
-
-      <s-section slot="aside" heading="Contact">
+      <Form method="post" key={messages.length}>
         <s-stack direction="block" gap="base">
-          {conversation?.customerName ? (
-            <s-text type="strong">{conversation.customerName}</s-text>
-          ) : (
-            <s-paragraph>No contact details on file.</s-paragraph>
-          )}
-          {conversation?.customerEmail ? (
-            <s-link href={`mailto:${conversation.customerEmail}`}>
-              {conversation.customerEmail}
-            </s-link>
-          ) : null}
-          {conversation?.customerPhone ? (
-            <s-text>{conversation.customerPhone}</s-text>
-          ) : null}
-          <s-text color="subdued">{conversationId}</s-text>
+          <s-text-area
+            name="content"
+            label="Message"
+            labelAccessibilityVisibility="exclusive"
+            placeholder="Reply to this shopper — they'll see it in the chat widget."
+            rows={3}
+            disabled={isReplying}
+          />
+          <s-button
+            type="submit"
+            variant="primary"
+            icon="send"
+            disabled={isReplying}
+            {...(isReplying ? { loading: true } : {})}
+          >
+            {isReplying ? "Sending…" : "Send reply"}
+          </s-button>
         </s-stack>
-      </s-section>
-    </s-page>
+      </Form>
+    </s-stack>
   );
 }
 

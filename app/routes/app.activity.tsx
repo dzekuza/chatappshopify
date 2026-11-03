@@ -1,9 +1,11 @@
 import { useEffect } from "react";
 import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
 import {
+  Outlet,
   useLoaderData,
   useNavigate,
   useNavigation,
+  useParams,
   useRevalidator,
 } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
@@ -70,11 +72,19 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           shop: session.shop,
           conversationId: { in: conversationIds },
         },
-        select: { conversationId: true, customerName: true, needsHuman: true },
+        select: {
+          conversationId: true,
+          customerName: true,
+          needsHuman: true,
+          aiPaused: true,
+        },
       })
     : [];
   const needsHumanSet = new Set(
     conversationRows.filter((r) => r.needsHuman).map((r) => r.conversationId),
+  );
+  const aiPausedSet = new Set(
+    conversationRows.filter((r) => r.aiPaused).map((r) => r.conversationId),
   );
   const customerNameByConversation = new Map(
     conversationRows.map((r) => [r.conversationId, r.customerName]),
@@ -90,6 +100,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         lastMessage: preview?.content ?? "",
         lastRole: preview?.role ?? "user",
         needsHuman: needsHumanSet.has(g.conversationId),
+        aiPaused: aiPausedSet.has(g.conversationId),
         customerName: customerNameByConversation.get(g.conversationId) || "",
       };
     })
@@ -106,9 +117,12 @@ export default function Activity() {
   const navigate = useNavigate();
   const navigation = useNavigation();
   const revalidator = useRevalidator();
+  const params = useParams();
 
-  // Poll for new conversations/messages so the list updates live, same
-  // cadence as the conversation detail page and the storefront widget.
+  // Poll for new conversations/messages so both panels update live — this
+  // revalidates the whole route tree, including the selected conversation
+  // rendered in <Outlet />, so the child route doesn't need its own poll.
+  // Same cadence as the storefront widget's own poll.
   useEffect(() => {
     const interval = setInterval(() => {
       if (revalidator.state === "idle" && navigation.state === "idle") {
@@ -155,74 +169,85 @@ export default function Activity() {
       {conversations.length === 0 ? (
         <ConversationsEmptyState />
       ) : (
-        <s-section padding="none">
-          {openingConversation ? (
-            <s-box padding="base">
-              <s-stack direction="inline" gap="small-200" alignItems="center">
-                <s-spinner accessibilityLabel="Opening conversation" />
-                <s-text color="subdued">Opening conversation…</s-text>
-              </s-stack>
-            </s-box>
-          ) : null}
-          <s-table variant="auto">
-            <s-table-header-row>
-              <s-table-header listSlot="primary">Conversation</s-table-header>
-              <s-table-header listSlot="inline">Last sender</s-table-header>
-              <s-table-header listSlot="labeled" format="numeric">
-                Messages
-              </s-table-header>
-              <s-table-header listSlot="labeled">Last activity</s-table-header>
-              <s-table-header listSlot="labeled">Status</s-table-header>
-            </s-table-header-row>
-            <s-table-body>
-              {conversations.map((c) => {
-                const linkId = `conversation-link-${c.conversationId}`;
-                return (
-                  <s-table-row key={c.conversationId} clickDelegate={linkId}>
-                    <s-table-cell>
-                      <s-stack direction="block" gap="small-200">
-                        <s-link
-                          id={linkId}
-                          href={`/app/activity/${c.conversationId}`}
-                          onClick={(event: Event) => {
-                            event.preventDefault();
-                            navigate(`/app/activity/${c.conversationId}`);
-                          }}
-                        >
-                          {c.customerName ||
-                            (c.lastMessage.length > 80
-                              ? `${c.lastMessage.slice(0, 80)}…`
-                              : c.lastMessage || "No messages yet")}
-                        </s-link>
-                        {c.customerName ? (
-                          <s-text color="subdued">
-                            {c.lastMessage.length > 80
-                              ? `${c.lastMessage.slice(0, 80)}…`
-                              : c.lastMessage || "No messages yet"}
-                          </s-text>
-                        ) : null}
-                      </s-stack>
-                    </s-table-cell>
-                    <s-table-cell>
-                      <s-badge tone={roleTone(c.lastRole)}>
-                        {roleLabel(c.lastRole)}
-                      </s-badge>
-                    </s-table-cell>
-                    <s-table-cell>{c.messageCount}</s-table-cell>
-                    <s-table-cell>{formatDate(c.lastActivity)}</s-table-cell>
-                    <s-table-cell>
-                      {c.needsHuman ? (
-                        <s-badge tone="warning" icon="alert-triangle">
-                          Needs attention
-                        </s-badge>
-                      ) : null}
-                    </s-table-cell>
-                  </s-table-row>
-                );
-              })}
-            </s-table-body>
-          </s-table>
-        </s-section>
+        <s-grid gridTemplateColumns="360px 1fr" gap="base">
+          <s-box border="base" borderRadius="base" padding="none">
+            {openingConversation ? (
+              <s-box padding="base">
+                <s-stack direction="inline" gap="small-200" alignItems="center">
+                  <s-spinner accessibilityLabel="Opening conversation" />
+                  <s-text color="subdued">Opening conversation…</s-text>
+                </s-stack>
+              </s-box>
+            ) : null}
+            <s-scroll-box
+              maxBlockSize="640px"
+              accessibilityLabel="Conversations"
+              accessibilityRole="region"
+            >
+              <s-table variant="auto">
+                <s-table-header-row>
+                  <s-table-header listSlot="primary">Conversation</s-table-header>
+                  <s-table-header listSlot="labeled">Status</s-table-header>
+                </s-table-header-row>
+                <s-table-body>
+                  {conversations.map((c) => {
+                    const linkId = `conversation-link-${c.conversationId}`;
+                    const isActive = params.conversationId === c.conversationId;
+                    const preview =
+                      c.lastMessage.length > 60
+                        ? `${c.lastMessage.slice(0, 60)}…`
+                        : c.lastMessage || "No messages yet";
+                    return (
+                      <s-table-row key={c.conversationId} clickDelegate={linkId}>
+                        <s-table-cell>
+                          <s-stack direction="block" gap="small-200">
+                            <s-link
+                              id={linkId}
+                              href={`/app/activity/${c.conversationId}`}
+                              onClick={(event: Event) => {
+                                event.preventDefault();
+                                navigate(`/app/activity/${c.conversationId}`);
+                              }}
+                            >
+                              <s-text type={isActive ? "strong" : undefined}>
+                                {c.customerName || preview}
+                              </s-text>
+                            </s-link>
+                            {c.customerName ? (
+                              <s-text color="subdued">{preview}</s-text>
+                            ) : null}
+                          </s-stack>
+                        </s-table-cell>
+                        <s-table-cell>
+                          <s-stack direction="block" gap="small-200">
+                            <s-badge tone={roleTone(c.lastRole)}>
+                              {roleLabel(c.lastRole)}
+                            </s-badge>
+                            {c.needsHuman ? (
+                              <s-badge tone="warning" icon="alert-triangle">
+                                Needs attention
+                              </s-badge>
+                            ) : null}
+                            {c.aiPaused ? (
+                              <s-badge tone="info">AI paused</s-badge>
+                            ) : null}
+                            <s-text color="subdued">
+                              {formatDate(c.lastActivity)}
+                            </s-text>
+                          </s-stack>
+                        </s-table-cell>
+                      </s-table-row>
+                    );
+                  })}
+                </s-table-body>
+              </s-table>
+            </s-scroll-box>
+          </s-box>
+
+          <s-box border="base" borderRadius="base" padding="base">
+            <Outlet />
+          </s-box>
+        </s-grid>
       )}
     </s-page>
   );

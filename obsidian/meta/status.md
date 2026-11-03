@@ -14,35 +14,40 @@ updated: 2026-11-03
 
 ## Current focus
 
-Two small admin/chat UX fixes this session, both uncommitted:
-1. Admin Activity pages now poll (5s) instead of only loading once.
-2. The AI now pauses for a conversation once a human agent replies (admin or
-   Telegram), until the merchant explicitly resumes it.
+Reworked the admin Activity section into a single two-column inbox-style
+page (conversation list + chat side by side) instead of separate list/detail
+pages — uncommitted, see "In progress" below.
 
 ## Done recently
 
-- **AI pause on human takeover.** New `Conversation.aiPaused` column
-  (migration `20261103130000_add_ai_paused`, schema updated, `prisma
-  generate` run — **migration not yet applied to the dev database**, since
-  `prisma migrate deploy`/`dev` are blocked by this session's permission
-  classifier; run `npx prisma migrate deploy` by hand before relying on the
-  column). New `app/conversation-handoff.server.ts` (`markHumanTookOver`)
-  called from both `app.activity_.$conversationId.tsx`'s reply action and
-  `telegram.webhook.tsx`'s reply handler — sets `aiPaused: true` and clears
-  `needsHuman`. `apps.chat-widget.chat.tsx` checks `aiPaused` right after
-  persisting the shopper's message and returns an empty reply (AI model
-  never called) instead of answering. The storefront widget
-  (`ai-chat-widget.js`) now removes the empty assistant bubble instead of
-  leaving a blank one when that happens. The admin conversation page shows
-  an "AI replies paused" banner with a "Resume AI" button
-  (`intent=resumeAi` form action) that clears the flag — it's never cleared
-  automatically.
-- **Admin Activity pages now poll.** Neither `app/routes/app.activity.tsx`
-  nor `app.activity_.$conversationId.tsx` ever re-fetched after the initial
-  load, so a merchant watching a conversation didn't see new shopper/Telegram
-  messages without a manual refresh. Both now poll via `useRevalidator`
-  every 5s (same cadence as the storefront widget's own poll), paused while
-  idle-submitting or navigating.
+- **Activity is now a two-column single page (uncommitted).**
+  `app/routes/app.activity.tsx` is now a layout route: a left column
+  (conversation list, in a `<s-scroll-box>`-wrapped `<s-table>`, fixed
+  360px) and an `<Outlet />` right column. Two new/renamed child routes
+  nest under it via React Router's flat-routes dot-nesting:
+  `app.activity.$conversationId.tsx` (renamed from
+  `app.activity_.$conversationId.tsx` — dropped the trailing underscore so
+  it nests instead of escaping nesting) now renders content-only (no
+  `<s-page>`/`<s-section>`, just the message thread + reply form) for the
+  right panel, and a new `app.activity._index.tsx` shows an empty state
+  there when no conversation is selected. Only one 5s live-poll
+  (`useRevalidator`) remains, in the parent — it revalidates the whole
+  route tree including the active child, so the child route's own poll
+  (redundant now that both panels are always mounted together) was removed.
+  Verified nesting with `npx react-router routes`; `npm run
+  typecheck`/`lint`/`build` all clean; a background Polaris-prop check
+  found no issues.
+- **AI pause on human takeover** (committed & pushed, `cb2b80d`). New
+  `Conversation.aiPaused` column (migration `20261103130000_add_ai_paused`,
+  applied), `app/conversation-handoff.server.ts` (`markHumanTookOver`)
+  called from the admin reply action and `telegram.webhook.tsx` so the AI
+  stops replying to a shopper once a human agent sends a message.
+  `apps.chat-widget.chat.tsx` checks `aiPaused` and skips the Gemini call;
+  `ai-chat-widget.js` drops the empty assistant bubble instead of showing a
+  blank one. Admin conversation page shows an "AI replies paused" banner
+  with a "Resume AI" button that clears the flag (never cleared
+  automatically).
+- **Admin Activity pages poll live** (part of the same commit above).
 - Starting a chat can create a Shopify customer (opt-in, off by default —
   `WidgetSettings.syncCustomersToShopify`) and/or a Klaviyo profile (opt-in
   via connecting an API key). Both create-only, never update an existing
@@ -57,21 +62,19 @@ Two small admin/chat UX fixes this session, both uncommitted:
 
 ## In progress
 
-- Nothing left mid-change in code. `npm run typecheck` and `npm run lint`
-  are both clean for the AI-pause + admin-polling work above. **Not
-  committed, not pushed.** The new migration has not been applied to any
-  database yet — do that before deploying, or the `aiPaused` column won't
-  exist and the Prisma calls that read/write it will fail at runtime.
+- The two-column Activity layout above is finished and verified
+  (typecheck/lint/build clean, route nesting confirmed, Polaris props
+  checked) but **not committed, not pushed**. No database/migration
+  changes needed for it — it's routing/UI only.
 
 ## Next up
 
-- Apply migration `20261103130000_add_ai_paused` (`npx prisma migrate
-  deploy`) and commit the AI-pause + admin-polling changes.
+- Commit and push the two-column Activity layout.
 - **Deploy the `shopify.app.dev.toml` config** — the `write_customers` scope
-  change only went out for the prod config
-  (`shopify app deploy --config ai-chat-app`, via `deploy-prod.yml` CI,
-  which ran successfully on this push). The dev app/config has no CI step —
-  still needs `npm run deploy -- --config dev` by hand.
+  change (and everything since) only went out for the prod config
+  (`shopify app deploy --config ai-chat-app`, via `deploy-prod.yml` CI).
+  The dev app/config has no CI step — still needs `npm run deploy --
+  config dev` by hand.
 - Fill the rest of the architecture/backend vault notes
   (`obsidian/architecture/*`, `obsidian/backend/*`) from the real codebase —
   still mostly unfilled `wip` templates from the vault scaffold.
@@ -96,6 +99,5 @@ Two small admin/chat UX fixes this session, both uncommitted:
 - **Deploy:** `git push` to `main` triggers Vercel (web app) + GitHub Actions
   (`shopify app deploy --config ai-chat-app`, prod Shopify config only); the
   dev app/config needs a manual deploy — see CLAUDE.md's "Deploying" section.
-- **Known issues:** the `aiPaused` migration above is written but unapplied;
-  the dev-config scope deploy gap and the rate-limiting question above are
-  otherwise the open items.
+- **Known issues:** the dev-config scope deploy gap and the rate-limiting
+  question above are the open items.

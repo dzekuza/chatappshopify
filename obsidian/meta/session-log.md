@@ -19,6 +19,23 @@ Entry format:
 - **Next:** the first thing to do next session
 ```
 
+## 2026-11-03 — Activity rebuilt as a two-column inbox page
+- **Changed:** Reworked the admin Activity section from separate list/detail
+  pages into one two-column page. `app.activity.tsx` is now a layout route
+  (left: conversation list in a `<s-scroll-box>` + `<s-table>`; right:
+  `<Outlet />`). Renamed `app.activity_.$conversationId.tsx` →
+  `app.activity.$conversationId.tsx` (dropped the trailing underscore so it
+  nests under the layout per the flat-routes dot convention) and stripped it
+  down to content-only (no `<s-page>`/`<s-section>`). Added
+  `app.activity._index.tsx` for the right panel's empty state. Removed the
+  child route's own 5s poll since the parent's poll already revalidates the
+  whole tree once both panels share a page.
+- **Status:** `npx react-router routes` confirms the nesting; `npm run
+  typecheck`/`lint`/`build` all clean; a background Polaris-prop review of
+  all three files found no issues. Not committed, not pushed — no DB changes
+  needed for this one.
+- **Next:** Commit and push.
+
 ## 2026-11-03 — Admin live-polling + AI pauses when a human agent takes over
 - **Changed:** Admin Activity pages (`app.activity.tsx`,
   `app.activity_.$conversationId.tsx`) didn't revalidate after first load —
