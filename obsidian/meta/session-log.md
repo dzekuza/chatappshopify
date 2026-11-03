@@ -19,6 +19,29 @@ Entry format:
 - **Next:** the first thing to do next session
 ```
 
+## 2026-11-03 — `<s-scroll-box>` replaced entirely with plain CSS overflow divs
+- **Changed:** User sent a second live screenshot: after the table→list fix
+  below, the reply composer in app.activity.$conversationId.tsx was now
+  visually overlapping message bubbles. Root cause: `<s-scroll-box
+  maxBlockSize="...">` itself — not just `<s-table>` inside it — doesn't
+  actually clip/scroll its content in this app; its children paint past its
+  assigned height instead, so the `<Form>` sibling right after it in the DOM
+  started overlapping. Ran the `polaris-ui-expert` skill per the user's
+  request; it confirmed plain HTML containers mixed into the Polaris tree
+  are already an established pattern here. Replaced both Activity scroll
+  regions (conversation list, message thread) with plain `<div>`s using real
+  `overflow-y: auto` + `max-height` in the renamed app/styles/activity.
+  module.css (was activity-conversation-list.module.css). Added
+  `role="region"` + `aria-label` + `tabIndex={0}` to each (WAI-ARIA's
+  scrollable-region pattern — a background review caught that this was
+  missing at first; jsx-a11y's default `no-noninteractive-tabindex` role
+  allowlist doesn't include "region", so both carry a narrow commented
+  `eslint-disable-next-line`, placed carefully since the directive only
+  covers the literal next source line, not the next JSX-rendered line).
+- **Status:** typecheck/lint/build clean. Not committed, not pushed.
+- **Next:** Commit, push, have ohubo re-verify — this is the third pass at
+  the same underlying Activity layout bug.
+
 ## 2026-11-03 — Activity conversation list didn't actually scroll (table → plain list)
 - **Changed:** User sent a live screenshot showing the left Activity
   conversation list overflowing the whole admin page instead of scrolling

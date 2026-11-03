@@ -14,26 +14,50 @@ updated: 2026-11-03
 
 ## Current focus
 
-Two fixes ready to commit together: the Activity conversation list didn't
-actually scroll internally in production, and a real client's (ohubo)
-human-handoff QA feedback led to one AI-behavior fix. See "In progress".
+`<s-scroll-box>` itself turned out unreliable, not just `<s-table>` inside
+it — second live screenshot showed the reply composer overlapping message
+bubbles because the scroll-box wrapping the (already-fixed) plain message
+list still wasn't clipping its content. Both Activity scroll regions now use
+plain CSS instead. Uncommitted, see "In progress".
 
 ## Done recently
 
-- **Activity conversation list no longer uses `<s-table>` (uncommitted).**
-  `<s-scroll-box maxBlockSize="640px">` wrapping `<s-table>` never actually
-  constrained/scrolled it — the list just grew and the whole admin page
-  scrolled past it (seen live, screenshot). `TableProps$1` has no
-  `overflow`/size props at all (it's designed for pagination, not
-  ancestor-constrained scrolling — confirmed via @shopify/polaris-types), so
-  wrapping it in a scroll box was never going to work. Replaced with a plain
-  `<s-stack>` of rows, each a real `<a>` (not `<s-link>`, which has no
-  block/card layout props) styled via a new
-  `app/styles/activity-conversation-list.module.css` (`all: unset` reset +
-  focus-visible outline). A Polaris-prop review confirmed the new markup is
-  clean and the diagnosis holds.
-- **AI sends a short holding reply once a human's been requested
-  (uncommitted).** New `NEEDS_HUMAN_HOLDING_MESSAGE` constant +
+- **`<s-scroll-box>` replaced with plain CSS overflow divs, everywhere in
+  Activity (uncommitted).** First fix (table → `<s-stack>` of rows, see
+  below) still left `<s-scroll-box maxBlockSize="...">` in place as the
+  outer scroll container for both the conversation list and the message
+  thread — and it *still* didn't clip/scroll correctly: a live screenshot
+  showed the reply `<Form>` (a sibling right after the scroll-box in the
+  DOM) visually overlapping earlier message bubbles, meaning the scroll
+  box's children were painting past its assigned height instead of being
+  clipped. Same failure mode as the table, just one layer deeper. Both
+  scroll regions in `app/routes/app.activity.tsx` and
+  `app.activity.$conversationId.tsx` now use a plain `<div>` with real CSS
+  `overflow-y: auto` + `max-height` (`.scrollRegionList` 640px /
+  `.scrollRegionThread` 480px in the renamed
+  `app/styles/activity.module.css`, formerly
+  `activity-conversation-list.module.css`) instead of trusting the Polaris
+  component. Each div carries `role="region"` + `aria-label` +
+  `tabIndex={0}` (WAI-ARIA's scrollable-region pattern — needed so keyboard
+  users can actually focus/scroll the region, since `<s-scroll-box>`
+  apparently handled that internally and jsx-a11y's default
+  `no-noninteractive-tabindex` role allowlist doesn't include `"region"`, so
+  both spots carry a narrow, commented `eslint-disable-next-line` for it —
+  a widget-parity-style review flagged the missing tabIndex before this was
+  added). Invoked via the `polaris-ui-expert` skill, which also confirmed
+  the diagnosis and that mixing plain HTML containers into the Polaris tree
+  is already an established pattern in both these files (`<Form>`,
+  `<Outlet />`, the `<a>` row from the first fix).
+- **Activity conversation list no longer uses `<s-table>`** (committed &
+  pushed, `03d0240`). `<s-scroll-box maxBlockSize="640px">` wrapping
+  `<s-table>` never actually constrained/scrolled it — the list just grew
+  and the whole admin page scrolled past it (seen live, screenshot).
+  `TableProps$1` has no `overflow`/size props at all (it's designed for
+  pagination, not ancestor-constrained scrolling — confirmed via
+  @shopify/polaris-types). Replaced with a plain `<s-stack>` of rows, each
+  a real `<a>` (not `<s-link>`, which has no block/card layout props).
+- **AI sends a short holding reply once a human's been requested**
+  (committed & pushed, `5149708`). New `NEEDS_HUMAN_HOLDING_MESSAGE` constant +
   early-return branch in `apps.chat-widget.chat.tsx`, right after the
   `aiPaused` check: once `conversationRecord.needsHuman` is true (shopper
   asked for a human on an *earlier* turn) and no one's joined yet
@@ -87,16 +111,16 @@ human-handoff QA feedback led to one AI-behavior fix. See "In progress".
 
 ## In progress
 
-- The list-scroll fix and the holding-reply fix above are both finished and
-  verified (typecheck/lint/build clean, Polaris-prop reviews on both) but
-  **not committed, not pushed**. No database/migration changes needed for
-  either.
+- The `<s-scroll-box>` → plain-div fix above is finished and verified
+  (typecheck/lint/build clean, confirmed via the `polaris-ui-expert` skill +
+  a Polaris-prop review) but **not committed, not pushed**. No
+  database/migration changes needed.
 
 ## Next up
 
-- Commit and push both fixes, then have ohubo re-test the whole handoff
-  flow now that every piece (AI pause, status badge, holding reply, list
-  scrolling) is actually live.
+- Commit and push the scroll-box fix, then have ohubo re-test the whole
+  handoff flow (and the Activity page's scrolling specifically — it's been
+  visibly broken through two prior attempts) now that everything's live.
 - **Email fallback for shoppers who've left the site before an agent
   replies** (ohubo asked for this) — there's no email-sending
   infrastructure anywhere in this repo at all. This would be a new feature

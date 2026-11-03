@@ -15,6 +15,7 @@ import prisma from "../db.server";
 import { markHumanTookOver } from "../conversation-handoff.server";
 import { TimestampedVideo } from "../components/timestamped-video";
 import { ChatMessageBody } from "../components/chat-message-body";
+import styles from "../styles/activity.module.css";
 
 function formatTime(date: Date) {
   return new Date(date).toLocaleString(undefined, {
@@ -197,11 +198,12 @@ export default function ActivityThread() {
       {messages.length === 0 ? (
         <s-paragraph>This conversation could not be found.</s-paragraph>
       ) : (
-        <s-scroll-box
-          maxBlockSize="480px"
-          accessibilityLabel="Messages"
-          accessibilityRole="region"
-        >
+        // Same WAI-ARIA scrollable-region exception as app.activity.tsx's
+        // conversation list — the message bubbles here have no focusable
+        // elements at all, so without tabIndex a keyboard user can't reach
+        // or scroll this region at all, not just less conveniently.
+        // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
+        <div className={styles.scrollRegionThread} role="region" aria-label="Messages" tabIndex={0}>
           <s-stack direction="block" gap="base">
             {messages.map((m) => {
               const { text, media } = splitMessageMedia(m.content);
@@ -238,7 +240,7 @@ export default function ActivityThread() {
               );
             })}
           </s-stack>
-        </s-scroll-box>
+        </div>
       )}
 
       <Form method="post" key={messages.length}>

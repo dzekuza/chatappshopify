@@ -14,7 +14,7 @@ import prisma from "../db.server";
 import { computeChatStats } from "../lib/chat-stats.server";
 import { MetricsCard, type Metric } from "../components/ui/metrics-card";
 import { ConversationsEmptyState } from "../components/ui/conversations-empty-state";
-import styles from "../styles/activity-conversation-list.module.css";
+import styles from "../styles/activity.module.css";
 
 const PAGE_SIZE = 50;
 
@@ -180,11 +180,13 @@ export default function Activity() {
                 </s-stack>
               </s-box>
             ) : null}
-            <s-scroll-box
-              maxBlockSize="640px"
-              accessibilityLabel="Conversations"
-              accessibilityRole="region"
-            >
+            {/* WAI-ARIA's scrollable-region pattern (w3.org/WAI/ARIA/apg/patterns/)
+                calls for tabIndex=0 here so keyboard users can actually scroll
+                it — jsx-a11y's default role allowlist for this rule just
+                doesn't include "region". Mouse/touch scrolling works either
+                way; this is only about keyboard reachability. */}
+            {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex */}
+            <div className={styles.scrollRegionList} role="region" aria-label="Conversations" tabIndex={0}>
               <s-stack direction="block" gap="none">
                 {conversations.map((c, index) => {
                   const isActive = params.conversationId === c.conversationId;
@@ -243,7 +245,7 @@ export default function Activity() {
                   );
                 })}
               </s-stack>
-            </s-scroll-box>
+            </div>
           </s-box>
 
           <s-box border="base" borderRadius="base" padding="base">

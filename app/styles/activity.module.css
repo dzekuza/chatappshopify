@@ -1,0 +1,41 @@
+/* Resets the native <a> used to make a whole conversation row clickable in
+   app.activity.tsx's left-column list — not just a link.aicw title like
+   elsewhere in this app. s-link has no block/card layout props to carry
+   this much content, and clickDelegate (the other Polaris-native option)
+   only exists on s-table-row, which is what the list originally used —
+   but a table wrapped in <s-scroll-box> didn't actually scroll internally,
+   it just kept growing the whole page. A plain list of real anchors inside
+   the scroll box is a much more predictable thing to constrain with
+   max-height, so that's what this backs. */
+.row {
+  all: unset;
+  display: block;
+  width: 100%;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.row:focus-visible {
+  outline: 2px solid Highlight;
+  outline-offset: -2px;
+}
+
+/* <s-scroll-box> (even wrapping a plain <s-stack>, not just the <s-table> it
+   replaced) didn't actually clip/scroll its content in production either —
+   the box kept its max-block-size, but its children painted past it instead
+   of being clipped, overlapping whatever came after in the DOM (the reply
+   composer, in app.activity.$conversationId.tsx, ended up overlapping
+   message bubbles). A plain div with well-understood overflow-y: auto
+   doesn't have that ambiguity. Shared here (imported by both
+   app.activity.tsx and app.activity.$conversationId.tsx) so the two scroll
+   regions stay visually consistent — different heights since the two
+   panels hold different amounts of chrome around them. */
+.scrollRegionList {
+  max-height: 640px;
+  overflow-y: auto;
+}
+
+.scrollRegionThread {
+  max-height: 480px;
+  overflow-y: auto;
+}
