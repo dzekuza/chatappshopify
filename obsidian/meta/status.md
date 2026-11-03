@@ -14,16 +14,24 @@ updated: 2026-11-03
 
 ## Current focus
 
-Real client (ohubo) QA'd the human-handoff flow and reported several gaps.
-Root cause for most of it: they tested in a ~15-minute window *before* that
-day's deploys had gone live (confirmed from `gh run list` timestamps vs. the
-conversation's own message timestamps in the DB) — see [[changelog]] for the
-full item-by-item verdict. One genuinely missing piece (AI should send a
-short holding reply instead of fully answering once a human's been
-requested but hasn't joined yet) is fixed below, uncommitted.
+Two fixes ready to commit together: the Activity conversation list didn't
+actually scroll internally in production, and a real client's (ohubo)
+human-handoff QA feedback led to one AI-behavior fix. See "In progress".
 
 ## Done recently
 
+- **Activity conversation list no longer uses `<s-table>` (uncommitted).**
+  `<s-scroll-box maxBlockSize="640px">` wrapping `<s-table>` never actually
+  constrained/scrolled it — the list just grew and the whole admin page
+  scrolled past it (seen live, screenshot). `TableProps$1` has no
+  `overflow`/size props at all (it's designed for pagination, not
+  ancestor-constrained scrolling — confirmed via @shopify/polaris-types), so
+  wrapping it in a scroll box was never going to work. Replaced with a plain
+  `<s-stack>` of rows, each a real `<a>` (not `<s-link>`, which has no
+  block/card layout props) styled via a new
+  `app/styles/activity-conversation-list.module.css` (`all: unset` reset +
+  focus-visible outline). A Polaris-prop review confirmed the new markup is
+  clean and the diagnosis holds.
 - **AI sends a short holding reply once a human's been requested
   (uncommitted).** New `NEEDS_HUMAN_HOLDING_MESSAGE` constant +
   early-return branch in `apps.chat-widget.chat.tsx`, right after the
@@ -34,57 +42,37 @@ requested but hasn't joined yet) is fixed below, uncommitted.
   tool calls — the turn that actually *requests* the handoff still gets a
   full reply, since `conversationRecord` reflects pre-turn state.
   `HANDOFF_TOOL_INSTRUCTION` reworded to stop telling the model to promise
-  ongoing full help it won't actually give. Requested by a real merchant
-  (ohubo) after confusingly getting full AI answers each time while waiting
-  for a reply.
+  ongoing full help it won't actually give. Requested by ohubo after
+  confusingly getting full AI answers each time while waiting for a reply.
+  Part of a wider QA pass on the handoff flow — see [[session-log]] for the
+  full item-by-item verdict (most of ohubo's other reports turned out to be
+  them testing in a ~15-minute window before that day's deploys had gone
+  live; items 4 (email fallback) and 5 (plan gating) were answered without
+  needing a code change).
 - **Storefront widget: handoff status UI** (committed & pushed, `1692c6e`).
-  When the AI calls
-  `requestHumanHandoff`, the widget now shows a "Connecting you with a team
-  member…" loader immediately (a new flag-only `AICW_HANDOFF` sentinel on
-  the reply stream — `product-card-stream.server.ts`'s
-  `textStreamWithProductCardsAndNavigation` gained an optional
-  `getHandoffRequested` param, set from a new `handoffRequested` flag in the
-  `requestHumanHandoff` tool's `execute` in `apps.chat-widget.chat.tsx`).
-  Once a human agent actually replies (`aiPaused` — see the AI-pause feature
-  below), it switches to a green "A team member has joined — they're
-  replying here now" badge, reusing `.aicw-message-agent`'s exact palette
-  (`#eaf7ee`/`#bfe6cb`/`#2f8a4b`) for visual consistency. `
-  apps.chat-widget.messages.tsx`'s poll response now also carries
-  `needsHuman`/`aiPaused` so the status stays correct across a page reload,
-  not just from the one-shot sentinel. New `renderHandoffStatus()` +
-  `.aicw-handoff-status` in `ai-chat-widget.js`/`.css`. Admin preview
-  deliberately untouched — it has no persisted Conversation row, so there's
-  no handoff state for it to show (confirmed by a widget-parity review: the
-  preview route streams via the plain `textStreamWithProductCards`, which
-  never gets the sentinel param, so nothing is half-wired).
+  When the AI calls `requestHumanHandoff`, the widget shows a "Connecting
+  you with a team member…" loader immediately (a flag-only `AICW_HANDOFF`
+  sentinel on the reply stream), then switches to a green "A team member
+  has joined" badge once `aiPaused` is confirmed true via the existing
+  `apps.chat-widget.messages.tsx` poll (which now also returns
+  `needsHuman`/`aiPaused`, so the status resyncs correctly across a page
+  reload). New `renderHandoffStatus()` + `.aicw-handoff-status` in
+  `ai-chat-widget.js`/`.css`. Admin preview deliberately untouched — it has
+  no persisted Conversation row, so there's no handoff state for it to show.
 - **Activity is now a two-column single page** (committed & pushed,
-  `244de74`). `app/routes/app.activity.tsx` is now a layout route: a left
-  column (conversation list, in a `<s-scroll-box>`-wrapped `<s-table>`, fixed
-  360px) and an `<Outlet />` right column. Two new/renamed child routes
-  nest under it via React Router's flat-routes dot-nesting:
-  `app.activity.$conversationId.tsx` (renamed from
-  `app.activity_.$conversationId.tsx` — dropped the trailing underscore so
-  it nests instead of escaping nesting) now renders content-only (no
-  `<s-page>`/`<s-section>`, just the message thread + reply form) for the
-  right panel, and a new `app.activity._index.tsx` shows an empty state
-  there when no conversation is selected. Only one 5s live-poll
-  (`useRevalidator`) remains, in the parent — it revalidates the whole
-  route tree including the active child, so the child route's own poll
-  (redundant now that both panels are always mounted together) was removed.
-  Verified nesting with `npx react-router routes`; `npm run
-  typecheck`/`lint`/`build` all clean; a background Polaris-prop check
-  found no issues.
+  `244de74`). `app/routes/app.activity.tsx` is a layout route: left column
+  (conversation list) + `<Outlet />` right column. `app.activity_.$conversationId.tsx` → `app.activity.$conversationId.tsx`
+  (dropped the trailing underscore so it nests per React Router's
+  flat-routes convention) now renders content-only for the right panel; a
+  new `app.activity._index.tsx` covers the empty state when nothing's
+  selected. One 5s live-poll in the parent covers both panels.
 - **AI pause on human takeover** (committed & pushed, `cb2b80d`). New
-  `Conversation.aiPaused` column (migration `20261103130000_add_ai_paused`,
-  applied), `app/conversation-handoff.server.ts` (`markHumanTookOver`)
-  called from the admin reply action and `telegram.webhook.tsx` so the AI
-  stops replying to a shopper once a human agent sends a message.
-  `apps.chat-widget.chat.tsx` checks `aiPaused` and skips the Gemini call;
-  `ai-chat-widget.js` drops the empty assistant bubble instead of showing a
-  blank one. Admin conversation page shows an "AI replies paused" banner
-  with a "Resume AI" button that clears the flag (never cleared
-  automatically).
-- **Admin Activity pages poll live** (part of the same commit above).
+  `Conversation.aiPaused` column, `app/conversation-handoff.server.ts`
+  (`markHumanTookOver`) called from the admin reply action and
+  `telegram.webhook.tsx` so the AI stops replying once a human agent sends
+  a message. Admin conversation page shows an "AI replies paused" banner
+  with a "Resume AI" button (never cleared automatically). Admin Activity
+  pages also started polling live in this same commit.
 - Starting a chat can create a Shopify customer (opt-in, off by default —
   `WidgetSettings.syncCustomersToShopify`) and/or a Klaviyo profile (opt-in
   via connecting an API key). Both create-only, never update an existing
@@ -99,21 +87,22 @@ requested but hasn't joined yet) is fixed below, uncommitted.
 
 ## In progress
 
-- The holding-reply fix above is finished and verified
-  (typecheck/lint/build clean) but **not committed, not pushed**. No
-  database/migration changes needed — one server route only.
-- **Still open from the ohubo feedback, deliberately not done:** emailing
-  the shopper if they've already left the site before an agent replies.
-  There's no email-sending infrastructure anywhere in this repo at all
-  (checked) — this would be a new feature (provider, sending domain,
-  template, send-timing logic) on the scale of the Telegram integration,
-  not a quick fix. Needs a real scoping decision before starting.
+- The list-scroll fix and the holding-reply fix above are both finished and
+  verified (typecheck/lint/build clean, Polaris-prop reviews on both) but
+  **not committed, not pushed**. No database/migration changes needed for
+  either.
 
 ## Next up
 
-- Commit and push the holding-reply fix, then have ohubo re-test the whole
-  handoff flow now that every piece (AI pause, status badge, holding reply)
-  is actually live.
+- Commit and push both fixes, then have ohubo re-test the whole handoff
+  flow now that every piece (AI pause, status badge, holding reply, list
+  scrolling) is actually live.
+- **Email fallback for shoppers who've left the site before an agent
+  replies** (ohubo asked for this) — there's no email-sending
+  infrastructure anywhere in this repo at all. This would be a new feature
+  (provider, sending domain, template, send-timing logic) on the scale of
+  the Telegram integration, not a quick fix. Needs a real scoping decision
+  before starting.
 - **Deploy the `shopify.app.dev.toml` config** — the `write_customers` scope
   change (and everything since) only went out for the prod config
   (`shopify app deploy --config ai-chat-app`, via `deploy-prod.yml` CI).
@@ -143,5 +132,5 @@ requested but hasn't joined yet) is fixed below, uncommitted.
 - **Deploy:** `git push` to `main` triggers Vercel (web app) + GitHub Actions
   (`shopify app deploy --config ai-chat-app`, prod Shopify config only); the
   dev app/config needs a manual deploy — see CLAUDE.md's "Deploying" section.
-- **Known issues:** the dev-config scope deploy gap and the rate-limiting
-  question above are the open items.
+- **Known issues:** the dev-config scope deploy gap, the rate-limiting
+  question above, and the missing email-fallback feature are the open items.

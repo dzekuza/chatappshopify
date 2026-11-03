@@ -14,6 +14,7 @@ import prisma from "../db.server";
 import { computeChatStats } from "../lib/chat-stats.server";
 import { MetricsCard, type Metric } from "../components/ui/metrics-card";
 import { ConversationsEmptyState } from "../components/ui/conversations-empty-state";
+import styles from "../styles/activity-conversation-list.module.css";
 
 const PAGE_SIZE = 50;
 
@@ -184,63 +185,64 @@ export default function Activity() {
               accessibilityLabel="Conversations"
               accessibilityRole="region"
             >
-              <s-table variant="auto">
-                <s-table-header-row>
-                  <s-table-header listSlot="primary">Conversation</s-table-header>
-                  <s-table-header listSlot="labeled">Status</s-table-header>
-                </s-table-header-row>
-                <s-table-body>
-                  {conversations.map((c) => {
-                    const linkId = `conversation-link-${c.conversationId}`;
-                    const isActive = params.conversationId === c.conversationId;
-                    const preview =
-                      c.lastMessage.length > 60
-                        ? `${c.lastMessage.slice(0, 60)}…`
-                        : c.lastMessage || "No messages yet";
-                    return (
-                      <s-table-row key={c.conversationId} clickDelegate={linkId}>
-                        <s-table-cell>
+              <s-stack direction="block" gap="none">
+                {conversations.map((c, index) => {
+                  const isActive = params.conversationId === c.conversationId;
+                  const preview =
+                    c.lastMessage.length > 60
+                      ? `${c.lastMessage.slice(0, 60)}…`
+                      : c.lastMessage || "No messages yet";
+                  return (
+                    <s-stack key={c.conversationId} direction="block" gap="none">
+                      <a
+                        className={styles.row}
+                        href={`/app/activity/${c.conversationId}`}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          navigate(`/app/activity/${c.conversationId}`);
+                        }}
+                      >
+                        <s-box
+                          padding="base"
+                          {...(isActive ? { background: "subdued" } : {})}
+                        >
                           <s-stack direction="block" gap="small-200">
-                            <s-link
-                              id={linkId}
-                              href={`/app/activity/${c.conversationId}`}
-                              onClick={(event: Event) => {
-                                event.preventDefault();
-                                navigate(`/app/activity/${c.conversationId}`);
-                              }}
-                            >
-                              <s-text type={isActive ? "strong" : undefined}>
-                                {c.customerName || preview}
-                              </s-text>
-                            </s-link>
+                            <s-text type={isActive ? "strong" : undefined}>
+                              {c.customerName || preview}
+                            </s-text>
                             {c.customerName ? (
                               <s-text color="subdued">{preview}</s-text>
                             ) : null}
-                          </s-stack>
-                        </s-table-cell>
-                        <s-table-cell>
-                          <s-stack direction="block" gap="small-200">
-                            <s-badge tone={roleTone(c.lastRole)}>
-                              {roleLabel(c.lastRole)}
-                            </s-badge>
-                            {c.needsHuman ? (
-                              <s-badge tone="warning" icon="alert-triangle">
-                                Needs attention
+                            <s-stack
+                              direction="inline"
+                              gap="small-200"
+                              alignItems="center"
+                            >
+                              <s-badge tone={roleTone(c.lastRole)}>
+                                {roleLabel(c.lastRole)}
                               </s-badge>
-                            ) : null}
-                            {c.aiPaused ? (
-                              <s-badge tone="info">AI paused</s-badge>
-                            ) : null}
-                            <s-text color="subdued">
-                              {formatDate(c.lastActivity)}
-                            </s-text>
+                              {c.needsHuman ? (
+                                <s-badge tone="warning" icon="alert-triangle">
+                                  Needs attention
+                                </s-badge>
+                              ) : null}
+                              {c.aiPaused ? (
+                                <s-badge tone="info">AI paused</s-badge>
+                              ) : null}
+                              <s-text color="subdued">
+                                {formatDate(c.lastActivity)}
+                              </s-text>
+                            </s-stack>
                           </s-stack>
-                        </s-table-cell>
-                      </s-table-row>
-                    );
-                  })}
-                </s-table-body>
-              </s-table>
+                        </s-box>
+                      </a>
+                      {index < conversations.length - 1 ? (
+                        <s-divider direction="block" color="base" />
+                      ) : null}
+                    </s-stack>
+                  );
+                })}
+              </s-stack>
             </s-scroll-box>
           </s-box>
 

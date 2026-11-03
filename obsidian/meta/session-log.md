@@ -19,6 +19,21 @@ Entry format:
 - **Next:** the first thing to do next session
 ```
 
+## 2026-11-03 — Activity conversation list didn't actually scroll (table → plain list)
+- **Changed:** User sent a live screenshot showing the left Activity
+  conversation list overflowing the whole admin page instead of scrolling
+  inside its `<s-scroll-box maxBlockSize="640px">`. Root cause (confirmed
+  via @shopify/polaris-types): `<s-table>` has no `overflow`/size props at
+  all — it's built for pagination, not ancestor-constrained scrolling, so
+  wrapping it in a scroll box was never going to clip it. Replaced the
+  table with a plain `<s-stack>` of rows in app/routes/app.activity.tsx,
+  each a real `<a>` (not `<s-link>`, which has no block/card layout props)
+  styled via new app/styles/activity-conversation-list.module.css.
+- **Status:** typecheck/lint/build clean; a Polaris-prop review confirmed
+  the new markup is clean and backed the table diagnosis. Not committed,
+  not pushed.
+- **Next:** Commit and push together with the holding-reply fix below.
+
 ## 2026-11-03 — Real client QA on handoff flow + AI holding-reply fix
 - **Changed:** ohubo (real merchant) reported 5 issues after testing the
   handoff flow by hand (translated from Lithuanian): AI doesn't go quiet
