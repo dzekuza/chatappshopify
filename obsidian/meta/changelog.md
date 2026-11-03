@@ -9,23 +9,25 @@ Chronological log of notable changes to the project. Newest first.
 This is a human-curated log — not a mirror of `git log`. Record *why*, not just
 *what*; the diff already covers *what*.
 
-## 2026-11-03 — Starting a chat now creates a Shopify customer, and a Klaviyo profile if connected
+## 2026-11-03 — Starting a chat can now create a Shopify customer and/or a Klaviyo profile
 - Until now, the name/email/phone a shopper gives to start a chat (`apps.chat-widget.chat.tsx`'s
   contact gate) was written only to this app's own `Conversation` table — never synced anywhere else.
   Asked by the project owner; see ADR-0002 for the reasoning.
 - New `app/shopify-customer-sync.server.ts`: looks up a Shopify customer by email, `customerCreate`s
-  one (tagged `"AI Chat Widget"`) if not found. Needs the new `write_customers` scope (added to both
-  `shopify.app.*.toml` configs) — **not deployed yet**, see session-log for the deploy step this still
-  needs.
-- New `app/klaviyo.server.ts`: looks a profile up by email first, then `POST /api/profile-import/`
-  (Klaviyo's create-or-update endpoint) only if none was found. No-ops unless the shop has set a
-  Klaviyo private API key — new `WidgetSettings.klaviyoApiKey` field (migration
-  `20261102235532_add_klaviyo_api_key`) and a new "Klaviyo" settings-page section, available on every
-  plan.
-- **Deliberately create-only on both sides, never update an existing match** — a background security
-  review (same session) correctly flagged the first version of this as an unauthenticated overwrite:
-  the chat widget is a public storefront form, so anyone could type a real customer's email alongside
-  any name/phone and have it silently overwrite that customer's Shopify/Klaviyo record. See ADR-0003.
+  one (tagged `"AI Chat Widget"`) if not found. **Opt-in per shop** — a "Create a Shopify customer for
+  each new chat" switch in the new Settings "Customer sync" card, off by default
+  (`WidgetSettings.syncCustomersToShopify`). Needs the new `write_customers` scope (added to both
+  `shopify.app.*.toml` configs).
+- New `app/klaviyo.server.ts`: `POST /api/profiles/` (plain create, not the upsert `/api/profile-import/`
+  endpoint — see ADR-0004 for why), treating a 409 as "already exists, skip". No-ops unless the shop
+  has set a Klaviyo private API key in the same "Customer sync" card
+  (`WidgetSettings.klaviyoApiKey`).
+- **Deliberately create-only on both sides, never update an existing match** — the chat widget is a
+  public, unauthenticated form, so updating on a match would let anyone type a real customer's email
+  alongside a fake name/phone and have it silently overwrite that customer's real record. Caught by a
+  background security review and fixed same-session, before production ever saw the unsafe version —
+  see ADR-0003 and ADR-0004 (the latter also closes a subtler identity-check gap on the Klaviyo side,
+  and adds the Shopify opt-in toggle).
 - Both syncs run fire-and-forget via `waitUntil` (same `background()` pattern as
   `telegram.server.ts`'s notifications) — a sync failure or Klaviyo being unreachable never blocks or
   fails the shopper's chat. Each retries once without the phone number if the receiving API rejects it

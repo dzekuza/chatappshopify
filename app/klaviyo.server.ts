@@ -40,6 +40,16 @@ type KlaviyoContact = {
   phone: string | null;
 };
 
+type KlaviyoApiError = {
+  code?: string;
+  title?: string;
+  // Just a field path (e.g. "/data/attributes/phone_number"), not a value —
+  // safe to keep around for `phoneFieldRejected` below, unlike `detail`
+  // (omitted entirely — Klaviyo's validation errors can echo the rejected
+  // value back in it, e.g. the shopper's submitted phone number).
+  source?: { pointer?: string };
+};
+
 function splitName(fullName: string): { first_name: string; last_name?: string } {
   const trimmed = fullName.trim().replace(/\s+/g, " ");
   const spaceIndex = trimmed.indexOf(" ");
@@ -51,40 +61,26 @@ function splitName(fullName: string): { first_name: string; last_name?: string }
 }
 
 /**
- * Throws on a non-2xx response (e.g. a bad/revoked API key, rate limit) so
- * the caller's `background()` catch aborts the whole sync rather than
- * falling through to treat an inconclusive lookup as "not found" — see
- * `syncKlaviyoProfile`'s doc comment for why that distinction matters here.
+ * `POST /api/profiles/` — plain create, not the `/api/profile-import/`
+ * upsert endpoint. Deliberate: Klaviyo resolves a profile's identity across
+ * every identifier on it (email AND phone_number, not just whichever one a
+ * caller happens to check), and returns 409 the moment any of them already
+ * match an existing profile. A caller-side "does a profile with this email
+ * exist?" pre-check doesn't see that — supply a stranger's real phone
+ * number alongside a fake email and an email-only check says "not found"
+ * while Klaviyo's own identity resolution would still match (and, through
+ * the upsert endpoint, update) that stranger's real profile. Letting
+ * Klaviyo's create-only endpoint be the single source of truth for "does
+ * this already exist" closes that gap (security review, 2026-11-03 — see
+ * decisions-log ADR-0004).
  */
-async function profileExistsByEmail(
-  apiKey: string,
-  email: string,
-): Promise<boolean> {
-  const filter = `equals(email,${JSON.stringify(email)})`;
-  const response = await fetch(
-    `${API_BASE}/profiles/?filter=${encodeURIComponent(filter)}`,
-    {
-      headers: {
-        Authorization: `Klaviyo-API-Key ${apiKey}`,
-        Accept: "application/vnd.api+json",
-        revision: API_REVISION,
-      },
-    },
-  );
-  if (!response.ok) {
-    throw new Error(`Klaviyo profile lookup failed (${response.status})`);
-  }
-  const json = await response.json();
-  return Array.isArray(json?.data) && json.data.length > 0;
-}
-
-async function importProfile(
+async function createProfile(
   apiKey: string,
   contact: KlaviyoContact,
   includePhone: boolean,
 ): Promise<Response> {
   const { first_name, last_name } = splitName(contact.name);
-  return fetch(`${API_BASE}/profile-import/`, {
+  return fetch(`${API_BASE}/profiles/`, {
     method: "POST",
     headers: {
       Authorization: `Klaviyo-API-Key ${apiKey}`,
@@ -107,6 +103,31 @@ async function importProfile(
   });
 }
 
+/** Klaviyo's JSON:API error objects, stripped of `detail` (which can echo
+ * the rejected value back, e.g. the submitted phone number) — never the raw
+ * response body. `source.pointer` is kept for `phoneFieldRejected` below;
+ * `logErrors` strips it too before this reaches a log line. */
+async function errorSummary(response: Response): Promise<KlaviyoApiError[]> {
+  const body = await response.json().catch(() => null);
+  if (!Array.isArray(body?.errors)) return [];
+  return body.errors.map((e: KlaviyoApiError) => ({
+    code: e?.code,
+    title: e?.title,
+    source: e?.source?.pointer ? { pointer: e.source.pointer } : undefined,
+  }));
+}
+
+function phoneFieldRejected(errors: KlaviyoApiError[]) {
+  return errors.some((e) => e?.source?.pointer?.includes("phone_number"));
+}
+
+function logErrors(status: number, errors: KlaviyoApiError[]) {
+  console.error(
+    `Klaviyo profile create failed (${status}):`,
+    errors.map((e) => ({ code: e.code, title: e.title })),
+  );
+}
+
 /**
  * Create a Klaviyo profile for the shopper who just started a chat
  * conversation. Runs in the background — never awaited by the chat route,
@@ -116,12 +137,10 @@ async function importProfile(
  * Deliberately CREATE-ONLY, never update, same reasoning as
  * shopify-customer-sync.server.ts's `syncShopifyCustomer`: the widget is an
  * unauthenticated storefront endpoint, so anyone can type any name/phone
- * alongside a real shopper's email with no proof they own it.
- * `/api/profile-import/` upserts unconditionally by email — calling it on a
- * match would silently overwrite that real profile's name/phone with
- * whatever the attacker typed, so a lookup runs first and the import is
- * skipped entirely on any match (security review, 2026-11-03 — see
- * decisions-log ADR-0003).
+ * alongside a real shopper's email (or phone — see `createProfile`'s doc
+ * comment) with no proof they own it. A 409 from `createProfile` means
+ * Klaviyo found an existing profile matching some identifier on this
+ * contact; treated as "already exists", skipped, never updated.
  */
 export function syncKlaviyoProfile(
   apiKey: string | null | undefined,
@@ -131,33 +150,25 @@ export function syncKlaviyoProfile(
 
   background(
     (async () => {
-      const exists = await profileExistsByEmail(apiKey as string, contact.email);
-      if (exists) return;
+      let response = await createProfile(apiKey as string, contact, true);
 
-      let response = await importProfile(apiKey as string, contact, true);
+      if (response.status === 409) return;
 
       if (!response.ok && contact.phone) {
         // Klaviyo rejects a phone_number that isn't a valid, SMS-capable
         // number — the widget collects it as free text with no format
         // validation, so this isn't rare. Retry without it rather than
         // losing the profile creation entirely.
-        const body = await response.clone().json().catch(() => null);
-        const phoneRejected = Array.isArray(body?.errors)
-          ? body.errors.some((e: {source?: {pointer?: string}}) =>
-              e?.source?.pointer?.includes("phone_number"),
-            )
-          : false;
-        if (phoneRejected) {
-          response = await importProfile(apiKey as string, contact, false);
+        const errors = await errorSummary(response.clone());
+        if (phoneFieldRejected(errors)) {
+          response = await createProfile(apiKey as string, contact, false);
+          if (response.status === 409) return;
         }
       }
 
       if (!response.ok) {
-        const body = await response.text().catch(() => "");
-        console.error(
-          `Klaviyo profile-import failed (${response.status}):`,
-          body,
-        );
+        const errors = await errorSummary(response);
+        logErrors(response.status, errors);
       }
     })(),
   );

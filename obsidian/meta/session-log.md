@@ -19,6 +19,25 @@ Entry format:
 - **Next:** the first thing to do next session
 ```
 
+## 2026-11-03 — Committed, deployed prod scope config, and fixed a second security review round
+- **Changed:** Committed and pushed the chat-sync feature + ADR-0003 fix (`a828464`). A background
+  review of that push flagged two more issues before production: `app/klaviyo.server.ts` switched from
+  a `GET /api/profiles/?filter=equals(email,…)` pre-check + `POST /api/profile-import/` to a direct
+  `POST /api/profiles/` (plain create), treating its 409 as "exists, skip" — closes a gap where the
+  email-only pre-check couldn't see Klaviyo's phone-based identity matching. Error logging now strips
+  `detail`/raw body everywhere (kept only `code`/`title`). Added
+  `WidgetSettings.syncCustomersToShopify` (`Boolean @default(false)`, new migration) and a Settings
+  toggle — the Shopify customer sync (previously unconditional for every shop) is now opt-in, same as
+  Klaviyo already was structurally.
+- **Status:** Fixed and verified (`npm run typecheck`/`lint`/`build` all clean) before any further
+  deploy — see ADR-0004 in [[decisions-log]]. Pushed to `main`; the prod `deploy-prod.yml` CI run for
+  the first commit (`a828464`) had already completed successfully
+  (`shopify app deploy --config ai-chat-app`, run 41549980653) by the time this second review landed,
+  so the fixed code's Vercel deploy supersedes whatever briefly went out — real-world exposure window
+  was effectively nil (brand-new, unannounced endpoint behavior).
+- **Next:** still need `npm run deploy -- --config dev` for the dev Shopify config (CI only covers
+  prod). The rate-limiting gap ADR-0004 flagged is unresolved — see [[status]]'s blockers.
+
 ## 2026-11-03 — Fixed unauthenticated-overwrite bug in the chat-sync feature below
 - **Changed:** `app/shopify-customer-sync.server.ts` (deleted `updateCustomer`; a matched email now
   returns/skips instead of updating) and `app/klaviyo.server.ts` (added `profileExistsByEmail` lookup;

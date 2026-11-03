@@ -103,3 +103,58 @@ against Shopify's app-proxy `logged_in_customer_id` (only present when the visit
 storefront account), which this change doesn't add. If "update an existing customer/profile from chat"
 is wanted later, it needs that verification — comparing against `logged_in_customer_id` — not a reversion
 to the email-lookup-then-update shape this ADR removed.
+
+## Related
+
+[[status]] · [[changelog]] · ADR-0003 · ADR-0004
+
+---
+
+## ADR-0004 — Klaviyo identity check moved into the create call; Shopify sync made opt-in
+
+- **Status:** Accepted
+- **Date:** 2026-11-03
+
+**Context.** A second security review, of the commit that landed ADR-0003's fix, found two more real
+issues before the code reached production:
+
+1. **Identity-check/upsert mismatch in `klaviyo.server.ts`.** ADR-0003's fix pre-checked
+   `GET /api/profiles/?filter=equals(email,…)` by email, then called the upsert endpoint
+   `/api/profile-import/` if nothing matched. But Klaviyo resolves profile identity across every
+   identifier on the payload — email *and* phone_number — while the pre-check only looked at email. A
+   request carrying a stranger's real phone number alongside a fabricated email would pass the
+   email-only check, then still match (and, through the upsert endpoint, update) that stranger's real
+   profile by phone. The two checks — ours and Klaviyo's — were looking at different identity fields, a
+   classic parser-differential gap.
+2. **No opt-in for the Shopify customer sync.** `syncShopifyCustomer` ran unconditionally for every
+   shop the moment this shipped — no setting, no consent. The chat widget is a public,
+   unauthenticated endpoint; without a merchant-controlled gate, anyone could script requests against it
+   to mass-create junk Shopify customer records (and, via the same shape of request against the Klaviyo
+   side, inflate a merchant's Klaviyo bill — Klaviyo prices by profile count).
+3. (Also fixed) `klaviyo.server.ts` logged the raw Klaviyo error response body on failure, which can
+   include the submitted value in a validation error's `detail` field (e.g. an invalid phone number
+   echoed back) — PII ending up in Vercel's log aggregation.
+
+**Decision.**
+- `klaviyo.server.ts` now calls `POST /api/profiles/` (plain create, not `/api/profile-import/`)
+  directly and treats its 409 response as "already exists, skip" — no separate pre-check. This makes
+  Klaviyo's own identity resolution (which already covers every identifier) the single source of truth
+  for "does this already exist", closing the email-vs-phone gap structurally rather than by trying to
+  replicate Klaviyo's matching logic ourselves.
+- Error logging now strips `detail` and the raw response body everywhere, keeping only `code`/`title`
+  (and `source.pointer`, a field path, not a value, used internally to detect a phone-specific
+  rejection).
+- Added `WidgetSettings.syncCustomersToShopify` (`Boolean @default(false)`) — the Shopify customer sync
+  (ADR-0002/ADR-0003) now only runs for shops that turn it on in Settings, in the same "Customer sync"
+  card as the Klaviyo API key field. Klaviyo already had an equivalent opt-in gate structurally (no key
+  = no sync); this gives Shopify the same.
+
+**Consequences.** Every existing shop defaults to the Shopify sync being off — a merchant has to
+deliberately enable it, which is the intended behavior change, not a bug to "fix" by flipping the
+default. The abuse-volume concern the review also raised (no rate limiting on conversation creation, so
+even an opted-in shop's sync could be spammed by scripted requests with unique fake emails) is **not**
+addressed by this ADR — it would need a distributed rate limiter (e.g. Upstash), a new dependency and
+architecture decision not taken here. The existing free-plan monthly conversation cap
+(`countConversationsThisMonth`/`FREE_PLAN_MONTHLY_CONVERSATIONS`) partially bounds this on free-plan
+shops only; paid plans have unlimited conversations and no such cap. Flagged in [[status]] as an open
+risk, not solved.

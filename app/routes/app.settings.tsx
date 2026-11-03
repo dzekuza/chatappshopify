@@ -154,6 +154,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const geminiApiKey = isProPlan
     ? String(payload.geminiApiKey ?? "").trim() || null
     : null;
+  const syncCustomersToShopify = Boolean(payload.syncCustomersToShopify);
   const klaviyoApiKey = String(payload.klaviyoApiKey ?? "").trim() || null;
   const language = LANGUAGE_VALUES.includes(payload.language)
     ? String(payload.language)
@@ -190,6 +191,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         cornerStyle,
         geminiModel,
         geminiApiKey,
+        syncCustomersToShopify,
         klaviyoApiKey,
         language,
         knowledgeCollections,
@@ -207,6 +209,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         cornerStyle,
         geminiModel,
         geminiApiKey,
+        syncCustomersToShopify,
         klaviyoApiKey,
         language,
         knowledgeCollections,
@@ -362,6 +365,7 @@ export default function SettingsPage() {
           />
 
           <KlaviyoSection
+            syncCustomersToShopify={form.syncCustomersToShopify}
             klaviyoApiKey={form.klaviyoApiKey}
             onChange={update}
           />
@@ -405,12 +409,6 @@ export default function SettingsPage() {
             The Gemini API key is configured via the{" "}
             <s-text type="strong">GEMINI_API_KEY</s-text> environment
             variable, not here — it&rsquo;s never exposed to shoppers.
-          </s-paragraph>
-          <s-paragraph>
-            Every shopper who starts a chat (name + email required, phone
-            optional) is automatically created or updated as a Shopify
-            customer, tagged &ldquo;AI Chat Widget&rdquo;. Add a Klaviyo API
-            key above to also sync them to Klaviyo.
           </s-paragraph>
         </s-stack>
       </s-section>

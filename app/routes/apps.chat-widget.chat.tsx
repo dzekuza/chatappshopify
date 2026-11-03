@@ -486,15 +486,17 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     });
 
     // Fire-and-forget — see each module's own doc comment for why these
-    // never block or fail the chat response. Shopify always runs (this app
-    // already has Admin API access for the shop); Klaviyo only if this shop
-    // connected its own API key in Settings.
+    // never block or fail the chat response. Both are opt-in per shop:
+    // Shopify via the Settings toggle, Klaviyo via connecting an API key —
+    // neither runs for a shop that hasn't turned it on.
     const syncedContact = {
       name: customerName,
       email: customerEmail,
       phone: customerPhone || null,
     };
-    syncShopifyCustomer(admin, syncedContact);
+    if (settings.syncCustomersToShopify) {
+      syncShopifyCustomer(admin, syncedContact);
+    }
     syncKlaviyoProfile(settings.klaviyoApiKey, syncedContact);
   }
 

@@ -54,6 +54,12 @@ model WidgetSettings {
   cornerStyle                 String    @default("rounded")
   geminiModel                 String    @default("gemini-3.5-flash-lite")
   geminiApiKey                String?
+  // Off by default: the chat widget's name/email/phone gate is an
+  // unauthenticated storefront endpoint, so a merchant should consciously
+  // opt in to having it create Shopify Customer records rather than it
+  // happening silently for every shop — see decisions-log ADR-0004 and
+  // shopify-customer-sync.server.ts.
+  syncCustomersToShopify      Boolean   @default(false)
   // Private Klaviyo API key, bring-your-own per shop (this is a multi-tenant
   // app — there's no shared Klaviyo account the way there's a shared Gemini
   // key). When set, the shopper's name/email/phone from the chat-start

@@ -15,43 +15,52 @@ updated: 2026-11-03
 ## Current focus
 
 No single active workstream — most recent work is the chat-start-to-CRM sync
-feature below (code complete, not yet deployed).
+feature below (shipped to main and the prod Shopify config; dev config still
+needs its own manual deploy).
 
 ## Done recently
 
-- Starting a chat now creates a Shopify customer, and a Klaviyo profile if
-  the shop has connected a key — create-only, never updates an existing
-  match (a same-session security review caught the first version silently
-  overwriting an existing customer's/profile's name+phone on an
-  unauthenticated email match) — see [[changelog]] 2026-11-03, ADR-0002 and
-  ADR-0003 in [[decisions-log]]. New `app/shopify-customer-sync.server.ts`
-  and `app/klaviyo.server.ts`, new `WidgetSettings.klaviyoApiKey` field +
-  Settings-page section, new `write_customers` scope.
+- Starting a chat can create a Shopify customer (opt-in, off by default —
+  `WidgetSettings.syncCustomersToShopify`) and/or a Klaviyo profile (opt-in
+  via connecting an API key). Both create-only, never update an existing
+  match. Two rounds of background security review caught and got fixed
+  same-session, before any unsafe version reached production — see
+  [[changelog]] 2026-11-03 and ADR-0002 through ADR-0004 in
+  [[decisions-log]]. New `app/shopify-customer-sync.server.ts` and
+  `app/klaviyo.server.ts`, new "Customer sync" Settings-page card, new
+  `write_customers` scope.
 - Video timestamps on knowledge entries — see [[changelog]] 2026-08-25.
 - Vault initialised.
 
 ## In progress
 
 - Nothing left mid-change in code. `npm run typecheck`, `npm run lint`, and
-  `npm run build` are all clean for the chat-sync feature above.
+  `npm run build` are all clean. Committed (`a828464` + a follow-up commit
+  for the ADR-0004 fixes) and pushed to `main`.
 
 ## Next up
 
-- **Deploy the scope change** — `write_customers` was added to both
-  `shopify.app.ai-chat-app.toml` and `shopify.app.dev.toml` but not pushed.
-  Until `shopify app deploy` runs for both configs (and existing merchants
-  re-approve the new scope via Shopify's standard reconsent flow), the
-  Shopify-customer half of the sync will fail silently in the background
-  (swallowed by `background()`'s catch) — nothing shopper-facing breaks, but
-  no customers get created until this ships.
+- **Deploy the `shopify.app.dev.toml` config** — the `write_customers` scope
+  change only went out for the prod config
+  (`shopify app deploy --config ai-chat-app`, via `deploy-prod.yml` CI,
+  which ran successfully on this push). The dev app/config has no CI step —
+  still needs `npm run deploy -- --config dev` by hand.
 - Fill the rest of the architecture/backend vault notes
   (`obsidian/architecture/*`, `obsidian/backend/*`) from the real codebase —
   still mostly unfilled `wip` templates from the vault scaffold.
 
 ## Blockers & open questions
 
-- Whether a merchant should be able to opt out of the automatic Shopify
-  customer sync (no toggle exists today — see ADR-0002's consequences).
+- **No rate limiting on conversation creation.** Flagged by the second
+  security review (ADR-0004) and deliberately not solved there: an opted-in
+  shop's Shopify/Klaviyo sync could still be spammed by scripted requests
+  using unique fake emails each time, creating junk records (and, for
+  Klaviyo specifically, inflating the merchant's bill — Klaviyo prices by
+  profile count). The free-plan monthly conversation cap
+  (`countConversationsThisMonth`) only bounds this on free-plan shops; paid
+  plans have unlimited conversations. Needs a real decision (a distributed
+  rate limiter like Upstash is a new dependency) before treating this as
+  closed.
 
 ## Environment
 
@@ -61,4 +70,5 @@ feature below (code complete, not yet deployed).
   (`shopify app deploy --config ai-chat-app`, prod Shopify config only); the
   dev app/config needs a manual deploy — see CLAUDE.md's "Deploying" section.
 - **Known issues:** none tracked separately; see [[changelog]] for recent
-  fixes. The `write_customers` scope deploy gap above is the one open item.
+  fixes. The dev-config scope deploy gap and the rate-limiting question
+  above are the two open items.
