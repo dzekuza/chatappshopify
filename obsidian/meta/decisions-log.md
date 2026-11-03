@@ -29,3 +29,77 @@ PR. Every code change carries a doc obligation. Agents get consistent context wi
 re-reading the whole codebase.
 
 ---
+
+## ADR-0002 — A chat-started shopper is synced to Shopify customers, and Klaviyo if the shop connects a key
+
+- **Status:** Accepted
+- **Date:** 2026-11-03
+
+**Context.** The project owner asked whether starting a chat saves the shopper to Klaviyo or Shopify
+contacts. It didn't — the contact-gate data (name/email, phone optional; required before
+`apps.chat-widget.chat.tsx` will even create a `Conversation` row) stayed entirely inside this app's own
+Postgres table. Asked to build both syncs.
+
+**Decision.**
+- **Shopify customer**, always on, no setting: `shopify-customer-sync.server.ts` looks the shopper up by
+  email first (`customers(query: "email:...")`) and `customerUpdate`s if found, `customerCreate`s
+  (tagged `"AI Chat Widget"`) otherwise — found-then-upsert rather than letting `customerCreate` fail on
+  a duplicate, since a returning shopper reusing their email on a second conversation is the common
+  case, not the exception. Needs the new `write_customers` scope.
+- **Klaviyo profile**, opt-in per shop: this is a multi-tenant app with no shared Klaviyo account the
+  way there's a shared Gemini key, so each shop brings its own private API key
+  (`WidgetSettings.klaviyoApiKey`, same bring-your-own-secret pattern as `geminiApiKey` — plaintext in
+  the DB, not encrypted at rest, consistent with that existing field). `klaviyo.server.ts` posts to
+  Klaviyo's `/api/profile-import/` endpoint, which upserts by identifier server-side, so (unlike
+  Shopify) no separate lookup call is needed.
+- Both run fire-and-forget (`waitUntil`, same `background()` shape as `telegram.server.ts`'s
+  notifications) so neither sync's latency or failure ever touches the shopper-facing chat response.
+  Each retries once without the phone number specifically if the receiving API's userErrors/JSON:API
+  errors point at the phone field — the widget's contact form collects phone as free text with no
+  format validation, so a malformed number is expected, not exceptional, and shouldn't sink the whole
+  name+email sync.
+
+**Consequences.** `write_customers` is a new scope — existing installs need to re-approve it before the
+Shopify-customer half actually works (Shopify's standard `app/scopes_update` reconsent flow, already
+wired in this app); **the scope change must still be deployed** (`shopify app deploy`) for both configs,
+which wasn't done as part of this change — see [[status]]. A merchant who doesn't want every chat
+visitor becoming a Shopify customer record has no opt-out toggle today; if that's raised, it becomes a
+setting next to the Klaviyo one, not a reason to remove the Shopify sync (it was explicitly requested).
+Klaviyo's `revision` header (`klaviyo.server.ts`'s `API_REVISION`) is pinned, not `"latest"` — bump it
+deliberately after checking Klaviyo's changelog for breaking changes, not reflexively.
+
+## Related
+
+[[status]] · [[changelog]] · ADR-0003
+
+---
+
+## ADR-0003 — The chat-start Shopify/Klaviyo sync is create-only, never update
+
+- **Status:** Accepted
+- **Date:** 2026-11-03
+
+**Context.** A background security review of ADR-0002's sync flagged, correctly: `syncShopifyCustomer`
+looked an existing Shopify customer up by email and ran `customerUpdate` on a match, overwriting its
+name and phone; `syncKlaviyoProfile` called Klaviyo's `/api/profile-import/`, which upserts
+unconditionally by email, on every call. Both took their input straight from the chat widget's contact
+form — `apps.chat-widget.chat.tsx`'s app-proxy auth confirms a request came from this shop's storefront,
+not who's typing into the form. Nothing stops a visitor from typing any real customer's email alongside
+an arbitrary name/phone, which that code path would then have written into the real customer's Shopify
+record and Klaviyo profile — an unauthenticated, silent overwrite of someone else's contact details.
+
+**Decision.** Both syncs are create-only. `syncShopifyCustomer` keeps its email lookup but, on a match,
+returns instead of calling `customerUpdate` — `updateCustomer` was deleted outright. `syncKlaviyoProfile`
+gained a lookup it didn't need before (`profileExistsByEmail`, `GET /api/profiles/?filter=equals(email,…)`),
+specifically to decide whether it's safe to call `/api/profile-import/` at all — on a match, the import is
+skipped, not attempted. In both modules, a lookup that throws (bad API key, rate limit, network error)
+aborts the whole sync rather than falling through to a create — an inconclusive "does this exist?" is
+treated as "don't risk it," not as "assume not found."
+
+**Consequences.** A shopper who already has a Shopify customer record or Klaviyo profile under the email
+they give the widget no longer gets their name/phone refreshed from chat — intentional; there's no way
+to tell that shopper apart from someone typing in a stranger's email without verifying the request
+against Shopify's app-proxy `logged_in_customer_id` (only present when the visitor is logged into a
+storefront account), which this change doesn't add. If "update an existing customer/profile from chat"
+is wanted later, it needs that verification — comparing against `logged_in_customer_id` — not a reversion
+to the email-lookup-then-update shape this ADR removed.

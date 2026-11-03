@@ -15,6 +15,8 @@ import {
   notifyHandoffRequested,
   notifyShopperMessage,
 } from "../telegram.server";
+import { syncShopifyCustomer } from "../shopify-customer-sync.server";
+import { syncKlaviyoProfile } from "../klaviyo.server";
 import { describeRange, withMediaFragment } from "../media-timestamp";
 import {
   countConversationsThisMonth,
@@ -482,6 +484,18 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         proactiveRuleId,
       },
     });
+
+    // Fire-and-forget — see each module's own doc comment for why these
+    // never block or fail the chat response. Shopify always runs (this app
+    // already has Admin API access for the shop); Klaviyo only if this shop
+    // connected its own API key in Settings.
+    const syncedContact = {
+      name: customerName,
+      email: customerEmail,
+      phone: customerPhone || null,
+    };
+    syncShopifyCustomer(admin, syncedContact);
+    syncKlaviyoProfile(settings.klaviyoApiKey, syncedContact);
   }
 
   // Starting a guided workflow — the topic button click itself, before the

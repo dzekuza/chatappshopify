@@ -54,6 +54,11 @@ model WidgetSettings {
   cornerStyle                 String    @default("rounded")
   geminiModel                 String    @default("gemini-3.5-flash-lite")
   geminiApiKey                String?
+  // Private Klaviyo API key, bring-your-own per shop (this is a multi-tenant
+  // app — there's no shared Klaviyo account the way there's a shared Gemini
+  // key). When set, the shopper's name/email/phone from the chat-start
+  // contact gate is synced to a Klaviyo profile — see klaviyo.server.ts.
+  klaviyoApiKey               String?
   language                    String    @default("auto")
   knowledgeCollections        Json      @default("[]")
   // Origins of any non-Liquid storefront allowed to call the app-proxy chat
@@ -308,16 +313,16 @@ model CatalogSync {
 // One row per shop, overwritten in place: this is a current-state flag for
 // the Plans page, not an audit log.
 model AiStatus {
-  id              String    @id @default(cuid())
-  shop            String    @unique
+  id            String    @id @default(cuid())
+  shop          String    @unique
   // "quota" | "auth" | "billing" | "unknown", or null when healthy.
-  lastErrorKind   String?
-  lastErrorAt     DateTime?
-  lastSuccessAt   DateTime?
+  lastErrorKind String?
+  lastErrorAt   DateTime?
+  lastSuccessAt DateTime?
   // Whether the failing/succeeding call used the merchant's own Pro-plan key
   // rather than the app's shared one — it decides who has to fix it.
-  usedOwnKey      Boolean   @default(false)
-  updatedAt       DateTime  @updatedAt
+  usedOwnKey    Boolean   @default(false)
+  updatedAt     DateTime  @updatedAt
 
   @@schema("chat_widget")
 }
@@ -329,21 +334,21 @@ model AiStatus {
 // A shop first gets a `linkCode`, sends it to the shared Orby bot, and the
 // webhook fills in `chatId`. Nothing is ever sent until `chatId` is set.
 model TelegramLink {
-  id        String    @id @default(cuid())
-  shop      String    @unique
+  id                String    @id @default(cuid())
+  shop              String    @unique
   // Rotated to a fresh unguessable value the moment it's redeemed, and only
   // honoured while `linkCodeExpiresAt` is in the future — so a code is
   // single-use and short-lived, never a standing password for the shop.
-  linkCode           String    @unique
-  linkCodeExpiresAt  DateTime?
-  chatId    String?
-  chatTitle String?
-  linkedAt  DateTime?
-  enabled   Boolean   @default(true)
+  linkCode          String    @unique
+  linkCodeExpiresAt DateTime?
+  chatId            String?
+  chatTitle         String?
+  linkedAt          DateTime?
+  enabled           Boolean   @default(true)
   // "all" — every shopper and AI turn; "alerts" — only human-handoff requests.
-  feedScope String    @default("all")
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  feedScope         String    @default("all")
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   @@schema("chat_widget")
 }
