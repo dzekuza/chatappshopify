@@ -14,16 +14,35 @@ updated: 2026-11-03
 
 ## Current focus
 
-`<s-scroll-box>` itself turned out unreliable, not just `<s-table>` inside
-it — second live screenshot showed the reply composer overlapping message
-bubbles because the scroll-box wrapping the (already-fixed) plain message
-list still wasn't clipping its content. Both Activity scroll regions now use
-plain CSS instead. Uncommitted, see "In progress".
+Two more storefront-widget fixes from live ohubo screenshots: a sentinel
+(`<!--AICW_HANDOFF-->`) occasionally leaking as raw visible text in a chat
+bubble, and no in-thread indicator (only a composer-area status bar) when a
+team member actually joins. Both fixed, uncommitted — see "In progress".
 
 ## Done recently
 
+- **Sentinel-stripping regexes widened + in-thread "team member joined"
+  notice (uncommitted).** A real screenshot showed `<!--AICW_HANDOFF-->`
+  left unstripped in a shopper-facing bubble. Fetched the actual live
+  `ai-chat-widget.js` from ohubo.com and diffed it byte-for-byte against the
+  repo source — identical, so it wasn't a stale-deploy issue (ruled that
+  theory out directly this time instead of assuming). Real cause: all four
+  client-side sentinel regexes (`PRODUCTS`/`NAVIGATE`/`WORKFLOW_OPTIONS`/
+  `HANDOFF`, in `extractProductCards`) required an exact `\n\n` separator,
+  but the model's own reply text can end with extra trailing whitespace,
+  pushing the actual gap past exactly two newlines. Widened all four to
+  `\s*` (any amount of leading whitespace, including none) — a
+  widget-parity review confirmed this can't cause false-positive stripping
+  elsewhere. Also added a new `appendSystemNotice()` — a centered green pill
+  ("A team member has joined the conversation") inserted directly into the
+  message list the moment `aiPaused` flips true, once per transition, on
+  top of the existing composer-area status bar. Deliberately not
+  retroactively synthesized on page-reload history restore (no "transition"
+  concept there) — a reviewer agreed that's a reasonable scope limit, not a
+  gap worth chasing.
 - **`<s-scroll-box>` replaced with plain CSS overflow divs, everywhere in
-  Activity (uncommitted).** First fix (table → `<s-stack>` of rows, see
+  Activity** (committed & pushed, `cc61c0d`). First fix (table → `<s-stack>`
+  of rows, see
   below) still left `<s-scroll-box maxBlockSize="...">` in place as the
   outer scroll container for both the conversation list and the message
   thread — and it *still* didn't clip/scroll correctly: a live screenshot
@@ -111,16 +130,17 @@ plain CSS instead. Uncommitted, see "In progress".
 
 ## In progress
 
-- The `<s-scroll-box>` → plain-div fix above is finished and verified
-  (typecheck/lint/build clean, confirmed via the `polaris-ui-expert` skill +
-  a Polaris-prop review) but **not committed, not pushed**. No
-  database/migration changes needed.
+- The sentinel-regex + in-thread system-notice fix above is finished and
+  verified (typecheck/lint/build clean, a widget-parity review found
+  nothing to fix) but **not committed, not pushed**. No database/migration
+  changes needed.
 
 ## Next up
 
-- Commit and push the scroll-box fix, then have ohubo re-test the whole
-  handoff flow (and the Activity page's scrolling specifically — it's been
-  visibly broken through two prior attempts) now that everything's live.
+- Commit and push, then have ohubo re-test the whole handoff flow end to
+  end — AI pause, status badge/notice, holding reply, sentinel stripping,
+  and Activity's scrolling (which took three attempts to actually fix) —
+  now that everything should finally be live and correct at once.
 - **Email fallback for shoppers who've left the site before an agent
   replies** (ohubo asked for this) — there's no email-sending
   infrastructure anywhere in this repo at all. This would be a new feature

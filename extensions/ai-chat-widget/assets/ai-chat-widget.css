@@ -730,6 +730,37 @@
   width: 100%;
 }
 
+/* A one-off "a team member has joined" marker dropped into the message
+   list itself (see appendSystemNotice) — centered and pill-shaped like a
+   system notification in any other chat product, not a left/right-aligned
+   bubble. Same green as .aicw-message-agent/.aicw-handoff-joined, since
+   all three signal "a human is involved". */
+.aicw-system-notice {
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px auto;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: #eaf7ee;
+  border: 1px solid #bfe6cb;
+  color: #2f8a4b;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.aicw-system-notice-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.aicw-system-notice-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
 .aicw-workflow-option {
   background: #fff;
   border: 1px solid #e5e7eb;

@@ -19,6 +19,26 @@ Entry format:
 - **Next:** the first thing to do next session
 ```
 
+## 2026-11-03 — Widget sentinel leak fix + in-thread "team member joined" notice
+- **Changed:** Third round of live ohubo feedback. (1) A screenshot showed
+  `<!--AICW_HANDOFF-->` left as raw visible text in a chat bubble. Fetched
+  the live ai-chat-widget.js from ohubo.com and diffed it byte-for-byte
+  against the repo source to rule out a stale deploy (identical — ruled out
+  directly, not assumed). Real cause: the client's four sentinel-stripping
+  regexes in extractProductCards required an exact `\n\n` before the
+  literal, but the model's own text can end with extra trailing whitespace,
+  pushing the gap past exactly two newlines. Widened all four to `\s*`. (2)
+  User also wanted an in-thread indicator, not just the composer-area
+  status bar, when a human joins — added `appendSystemNotice()`, a centered
+  green pill inserted into the message list once per transition into
+  `aiPaused`.
+- **Status:** typecheck/lint/build clean; a widget-parity review confirmed
+  no false-positive stripping risk from the regex widening, the forward
+  references inside appendSystemNotice are safe (same pattern as existing
+  appendMessage), and agreed not synthesizing the notice during
+  restoreHistory() is a reasonable scope limit. Not committed, not pushed.
+- **Next:** Commit, push, have ohubo do one full end-to-end re-test.
+
 ## 2026-11-03 — `<s-scroll-box>` replaced entirely with plain CSS overflow divs
 - **Changed:** User sent a second live screenshot: after the table→list fix
   below, the reply composer in app.activity.$conversationId.tsx was now

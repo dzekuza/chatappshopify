@@ -802,6 +802,26 @@
 
     initProactive();
 
+    // A one-off marker dropped into the message list itself (not just the
+    // persistent status bar above the composer — see renderHandoffStatus)
+    // the moment a human actually joins, so it reads the same way as a
+    // normal system notification in any other chat product rather than
+    // only being visible if the shopper happens to glance at the composer
+    // area. Styled like the "joined" status bar for visual consistency.
+    function appendSystemNotice(text) {
+      var el = document.createElement("div");
+      el.className = "aicw-system-notice";
+      el.innerHTML =
+        '<span class="aicw-system-notice-icon">' +
+        checkCircleIcon() +
+        "</span><span>" +
+        escapeHtml(text) +
+        "</span>";
+      messagesEl.appendChild(el);
+      updateEmptyState();
+      if (isFollowing) scrollToBottom(false);
+    }
+
     // Shown above the composer: a loader while a human has been asked for
     // but hasn't replied yet (requestHumanHandoff tool — see
     // apps.chat-widget.chat.tsx), then a badge once one actually takes over
@@ -858,6 +878,9 @@
           });
 
           if (data.aiPaused) {
+            if (handoffStatus !== "joined") {
+              appendSystemNotice("A team member has joined the conversation");
+            }
             renderHandoffStatus("joined");
           } else if (data.needsHuman) {
             renderHandoffStatus("waiting");
@@ -1225,18 +1248,27 @@
     // handler below) — a partial chunk mid-stream can't be reliably
     // JSON.parse'd. Not anchored to the end of the string, since the two
     // sentinels can both be present and only one of them is actually last.
-    var PRODUCTS_SENTINEL_REGEX = /\n\n<!--AICW_PRODUCTS:(\[.*?\])-->/;
-    var NAVIGATE_SENTINEL_REGEX = /\n\n<!--AICW_NAVIGATE:(\{.*?\})-->/;
+    //
+    // Each sentinel's own text always starts with exactly "\n\n" when the
+    // server appends it (see product-card-stream.server.ts), but the
+    // model's own reply can itself end with trailing whitespace/newlines —
+    // seen live as a raw unstripped "<!--AICW_HANDOFF-->" left in a
+    // shopper-facing bubble when the model's text happened to end with an
+    // extra newline, pushing the separator past the exact two this used to
+    // require. \s* tolerates however much whitespace actually ends up
+    // there instead of demanding precisely "\n\n".
+    var PRODUCTS_SENTINEL_REGEX = /\s*<!--AICW_PRODUCTS:(\[.*?\])-->/;
+    var NAVIGATE_SENTINEL_REGEX = /\s*<!--AICW_NAVIGATE:(\{.*?\})-->/;
     // Appended only to a deterministic workflow-question reply (see
     // workflowQuestionResponseText in apps.chat-widget.chat.tsx) — the
     // question's preset answers, rendered as buttons below the bubble.
     var WORKFLOW_OPTIONS_SENTINEL_REGEX =
-      /\n\n<!--AICW_WORKFLOW_OPTIONS:(\[.*?\])-->/;
+      /\s*<!--AICW_WORKFLOW_OPTIONS:(\[.*?\])-->/;
     // Flag-only (no JSON payload) — appended when the assistant called
     // requestHumanHandoff this turn. See renderHandoffStatus's "waiting"
     // branch, which this drives for an instant loader instead of waiting on
     // the next messages.tsx poll.
-    var HANDOFF_SENTINEL_REGEX = /\n\n<!--AICW_HANDOFF-->/;
+    var HANDOFF_SENTINEL_REGEX = /\s*<!--AICW_HANDOFF-->/;
 
     function extractProductCards(text) {
       var products = [];
