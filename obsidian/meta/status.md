@@ -14,15 +14,25 @@ updated: 2026-11-03
 
 ## Current focus
 
-Two more storefront-widget fixes from live ohubo screenshots: a sentinel
-(`<!--AICW_HANDOFF-->`) occasionally leaking as raw visible text in a chat
-bubble, and no in-thread indicator (only a composer-area status bar) when a
-team member actually joins. Both fixed, uncommitted — see "In progress".
+New admin "Take over" button for the human-handoff flow (ohubo's request) —
+uncommitted, see "In progress".
 
 ## Done recently
 
+- **"Take over" button on the admin conversation page (uncommitted).**
+  Merchant can now pause the AI immediately, without typing a reply first —
+  useful to claim a conversation while composing a longer answer. New
+  `intent === "takeOver"` branch in `app.activity.$conversationId.tsx`'s
+  action (calls the existing `markHumanTookOver` helper, no ChatMessage
+  created), a `<s-button icon="person">` in the header (right-aligned via
+  `<s-stack direction="inline" justifyContent="space-between">`), shown
+  whenever the conversation isn't already `aiPaused`. The shopper still
+  sees the "team member joined" notice/badge within a poll cycle even
+  though no reply was sent, since that's driven by the flag, not by an
+  agent message existing. A Polaris-prop review found nothing to fix.
 - **Sentinel-stripping regexes widened + in-thread "team member joined"
-  notice (uncommitted).** A real screenshot showed `<!--AICW_HANDOFF-->`
+  notice** (committed & pushed, `f2e491c`). A real screenshot showed
+  `<!--AICW_HANDOFF-->`
   left unstripped in a shopper-facing bubble. Fetched the actual live
   `ai-chat-widget.js` from ohubo.com and diffed it byte-for-byte against the
   repo source — identical, so it wasn't a stale-deploy issue (ruled that
@@ -130,17 +140,17 @@ team member actually joins. Both fixed, uncommitted — see "In progress".
 
 ## In progress
 
-- The sentinel-regex + in-thread system-notice fix above is finished and
-  verified (typecheck/lint/build clean, a widget-parity review found
-  nothing to fix) but **not committed, not pushed**. No database/migration
-  changes needed.
+- The "Take over" button above is finished and verified (typecheck/lint/
+  build clean, a Polaris-prop review found nothing to fix) but **not
+  committed, not pushed**. No database/migration changes needed.
 
 ## Next up
 
-- Commit and push, then have ohubo re-test the whole handoff flow end to
-  end — AI pause, status badge/notice, holding reply, sentinel stripping,
-  and Activity's scrolling (which took three attempts to actually fix) —
-  now that everything should finally be live and correct at once.
+- Commit and push the Take over button, then have ohubo re-test the whole
+  handoff flow end to end — AI pause, status badge/notice, holding reply,
+  sentinel stripping, Take over, and Activity's scrolling (which took three
+  attempts to actually fix) — now that everything should finally be live
+  and correct at once.
 - **Email fallback for shoppers who've left the site before an agent
   replies** (ohubo asked for this) — there's no email-sending
   infrastructure anywhere in this repo at all. This would be a new feature

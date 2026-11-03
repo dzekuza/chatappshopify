@@ -110,6 +110,18 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     return Response.json({ ok: true });
   }
 
+  if (formData.get("intent") === "takeOver") {
+    // Pauses the AI immediately, without requiring a reply first — for a
+    // merchant who wants to claim the conversation while they compose a
+    // longer answer, or just stop the AI from answering further messages
+    // right away. No ChatMessage is created, but the shopper still sees
+    // the "team member has joined" notice within a poll cycle (see
+    // conversation-handoff.server.ts and the widget's aiPaused poll) —
+    // that's driven by the flag, not by an actual reply existing.
+    await markHumanTookOver(session.shop, conversationId);
+    return Response.json({ ok: true });
+  }
+
   const content = String(formData.get("content") ?? "").trim();
 
   if (!content) {
@@ -138,6 +150,8 @@ export default function ActivityThread() {
   const navigation = useNavigation();
   const resumeAiFetcher = useFetcher();
   const isResumingAi = resumeAiFetcher.state !== "idle";
+  const takeOverFetcher = useFetcher();
+  const isTakingOver = takeOverFetcher.state !== "idle";
   const isReplying =
     navigation.state === "submitting" &&
     navigation.formAction?.endsWith(`/app/activity/${conversationId}`);
@@ -151,26 +165,48 @@ export default function ActivityThread() {
   // column, so this is just the right-hand chat panel.
   return (
     <s-stack direction="block" gap="base">
-      <s-stack direction="block" gap="small-200">
-        <s-stack direction="inline" gap="small" alignItems="center">
-          <s-text type="strong">
-            {conversation?.customerName || "Conversation"}
-          </s-text>
-          {conversation?.customerEmail ? (
-            <s-link href={`mailto:${conversation.customerEmail}`}>
-              {conversation.customerEmail}
-            </s-link>
-          ) : null}
-          {conversation?.customerPhone ? (
-            <s-text color="subdued">{conversation.customerPhone}</s-text>
-          ) : null}
+      <s-stack
+        direction="inline"
+        gap="base"
+        alignItems="start"
+        justifyContent="space-between"
+      >
+        <s-stack direction="block" gap="small-200">
+          <s-stack direction="inline" gap="small" alignItems="center">
+            <s-text type="strong">
+              {conversation?.customerName || "Conversation"}
+            </s-text>
+            {conversation?.customerEmail ? (
+              <s-link href={`mailto:${conversation.customerEmail}`}>
+                {conversation.customerEmail}
+              </s-link>
+            ) : null}
+            {conversation?.customerPhone ? (
+              <s-text color="subdued">{conversation.customerPhone}</s-text>
+            ) : null}
+          </s-stack>
+          <s-text color="subdued">{conversationId}</s-text>
         </s-stack>
-        <s-text color="subdued">{conversationId}</s-text>
+
+        {conversation && !conversation.aiPaused ? (
+          <takeOverFetcher.Form method="post">
+            <input type="hidden" name="intent" value="takeOver" />
+            <s-button
+              type="submit"
+              icon="person"
+              disabled={isTakingOver}
+              {...(isTakingOver ? { loading: true } : {})}
+            >
+              {isTakingOver ? "Taking over…" : "Take over"}
+            </s-button>
+          </takeOverFetcher.Form>
+        ) : null}
       </s-stack>
 
       {conversation?.needsHuman ? (
         <s-banner heading="Needs attention" tone="warning">
-          This shopper asked to talk to a human. Reply below to resolve it.
+          This shopper asked to talk to a human. Reply below, or use Take
+          over above to claim the conversation right away.
         </s-banner>
       ) : null}
 

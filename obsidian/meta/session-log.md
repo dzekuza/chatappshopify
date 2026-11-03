@@ -19,6 +19,19 @@ Entry format:
 - **Next:** the first thing to do next session
 ```
 
+## 2026-11-03 — "Take over" button for the admin conversation page
+- **Changed:** ohubo asked for a button to take over a conversation
+  outright. New `intent === "takeOver"` action branch in
+  app.activity.$conversationId.tsx calling the existing
+  `markHumanTookOver` helper directly (no reply message required), and a
+  `<s-button icon="person">` "Take over" in the conversation header
+  (right-aligned, hidden once already `aiPaused`). The shopper sees the
+  "team member joined" notice within a poll cycle regardless of whether an
+  actual reply exists, since that's poll/flag-driven.
+- **Status:** typecheck/lint/build clean; a Polaris-prop review found
+  nothing to fix. Not committed, not pushed.
+- **Next:** Commit, push, have ohubo re-test the full flow.
+
 ## 2026-11-03 — Widget sentinel leak fix + in-thread "team member joined" notice
 - **Changed:** Third round of live ohubo feedback. (1) A screenshot showed
   `<!--AICW_HANDOFF-->` left as raw visible text in a chat bubble. Fetched
