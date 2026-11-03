@@ -14,12 +14,31 @@ updated: 2026-11-03
 
 ## Current focus
 
-Storefront widget now shows live status for the human-handoff flow —
-uncommitted, see "In progress" below.
+Real client (ohubo) QA'd the human-handoff flow and reported several gaps.
+Root cause for most of it: they tested in a ~15-minute window *before* that
+day's deploys had gone live (confirmed from `gh run list` timestamps vs. the
+conversation's own message timestamps in the DB) — see [[changelog]] for the
+full item-by-item verdict. One genuinely missing piece (AI should send a
+short holding reply instead of fully answering once a human's been
+requested but hasn't joined yet) is fixed below, uncommitted.
 
 ## Done recently
 
-- **Storefront widget: handoff status UI (uncommitted).** When the AI calls
+- **AI sends a short holding reply once a human's been requested
+  (uncommitted).** New `NEEDS_HUMAN_HOLDING_MESSAGE` constant +
+  early-return branch in `apps.chat-widget.chat.tsx`, right after the
+  `aiPaused` check: once `conversationRecord.needsHuman` is true (shopper
+  asked for a human on an *earlier* turn) and no one's joined yet
+  (`aiPaused` still false), every further message gets the same short
+  "I've flagged this for our team…" reply instead of a full AI turn with
+  tool calls — the turn that actually *requests* the handoff still gets a
+  full reply, since `conversationRecord` reflects pre-turn state.
+  `HANDOFF_TOOL_INSTRUCTION` reworded to stop telling the model to promise
+  ongoing full help it won't actually give. Requested by a real merchant
+  (ohubo) after confusingly getting full AI answers each time while waiting
+  for a reply.
+- **Storefront widget: handoff status UI** (committed & pushed, `1692c6e`).
+  When the AI calls
   `requestHumanHandoff`, the widget now shows a "Connecting you with a team
   member…" loader immediately (a new flag-only `AICW_HANDOFF` sentinel on
   the reply stream — `product-card-stream.server.ts`'s
@@ -80,16 +99,21 @@ uncommitted, see "In progress" below.
 
 ## In progress
 
-- The storefront handoff-status UI above is finished and verified
-  (typecheck/lint/build clean, a widget-parity review confirmed the admin
-  preview needs no matching change and found no visual clash — one color
-  mismatch it flagged between the new badge and the existing agent-message
-  green was fixed) but **not committed, not pushed**. No database/migration
-  changes needed for it — widget + one server route only.
+- The holding-reply fix above is finished and verified
+  (typecheck/lint/build clean) but **not committed, not pushed**. No
+  database/migration changes needed — one server route only.
+- **Still open from the ohubo feedback, deliberately not done:** emailing
+  the shopper if they've already left the site before an agent replies.
+  There's no email-sending infrastructure anywhere in this repo at all
+  (checked) — this would be a new feature (provider, sending domain,
+  template, send-timing logic) on the scale of the Telegram integration,
+  not a quick fix. Needs a real scoping decision before starting.
 
 ## Next up
 
-- Commit and push the storefront handoff-status UI.
+- Commit and push the holding-reply fix, then have ohubo re-test the whole
+  handoff flow now that every piece (AI pause, status badge, holding reply)
+  is actually live.
 - **Deploy the `shopify.app.dev.toml` config** — the `write_customers` scope
   change (and everything since) only went out for the prod config
   (`shopify app deploy --config ai-chat-app`, via `deploy-prod.yml` CI).

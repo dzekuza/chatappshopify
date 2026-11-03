@@ -19,6 +19,30 @@ Entry format:
 - **Next:** the first thing to do next session
 ```
 
+## 2026-11-03 — Real client QA on handoff flow + AI holding-reply fix
+- **Changed:** ohubo (real merchant) reported 5 issues after testing the
+  handoff flow by hand (translated from Lithuanian): AI doesn't go quiet
+  after a human replies; AI should give a short notice instead of fully
+  answering while waiting for a human; no "team member joined" message;
+  can a reply also go by email if the shopper's left the site; does
+  Telegram/Activity need a paid plan. Investigated with a direct read-only
+  query against the live production DB for their actual test conversation
+  (`28529b47-...`) plus `gh run list` deploy timestamps — their test window
+  (17:19–17:22 UTC) was *before* that day's AI-pause deploy finished
+  (17:25), so items 1 and (partly) 3 were already fixed, just not live yet
+  at test time. Confirmed via grep that Telegram/Activity have zero plan
+  gating (item 5: works fully on Free). Confirmed via grep that there's no
+  email-sending code anywhere in the repo (item 4: real feature, not a
+  tweak). Item 2 was genuinely missing and got fixed: new
+  `NEEDS_HUMAN_HOLDING_MESSAGE` + early-return in apps.chat-widget.chat.tsx
+  — once a human's been requested (`needsHuman`) but hasn't joined
+  (`aiPaused` still false), every further shopper message gets a short
+  canned holding reply instead of a full AI turn with tool calls.
+  `HANDOFF_TOOL_INSTRUCTION` reworded to match (stop telling the model to
+  promise ongoing full help).
+- **Status:** typecheck/lint/build clean. Not committed, not pushed.
+- **Next:** Commit, push, have ohubo re-test everything fresh.
+
 ## 2026-11-03 — Storefront widget shows live human-handoff status
 - **Changed:** `requestHumanHandoff` (apps.chat-widget.chat.tsx) now sets a
   `handoffRequested` flag, which `textStreamWithProductCardsAndNavigation`

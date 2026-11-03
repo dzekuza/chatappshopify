@@ -109,8 +109,22 @@ const HANDOFF_TOOL_INSTRUCTION =
   "If the shopper asks to speak with a human, a real person, or store staff " +
   "— or seems frustrated and asks for escalation — call the " +
   "requestHumanHandoff tool once, then let them know a team member has been " +
-  "notified and will follow up, while still offering to keep helping in the " +
-  "meantime.";
+  "notified and will follow up shortly. Don't promise to keep fully " +
+  "answering further questions in the meantime — every message after this " +
+  "one gets a short holding reply instead (see NEEDS_HUMAN_HOLDING_MESSAGE) " +
+  "until someone actually joins, so this turn's reply is the shopper's one " +
+  "real answer until then.";
+
+// Sent in place of a normal AI turn for every message after the shopper has
+// already asked for a human (needsHuman) but no one has joined yet
+// (aiPaused still false) — see the early return below. A merchant asked for
+// this explicitly: once a human's been requested, further questions should
+// get a short "team's on it" notice instead of the AI continuing to fully
+// answer with tool calls, which read as the bot ignoring the request.
+const NEEDS_HUMAN_HOLDING_MESSAGE =
+  "I've already flagged this for our team — they'll be with you shortly. " +
+  "I'll hold off on a full answer until they join, but let me know if it's " +
+  "urgent and I'll do my best to help.";
 
 const NAVIGATE_TOOL_INSTRUCTION =
   "Call the navigateToProduct tool when the shopper is asking about, or you " +
@@ -571,6 +585,36 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   if (conversationRecord?.aiPaused) {
     return cors(
       plainTextResponse("", { "X-Conversation-Id": conversationId }),
+    );
+  }
+
+  // The shopper already asked for a human on an earlier turn (needsHuman)
+  // and no one has joined yet (aiPaused still false, handled above) —
+  // rather than keep fully answering with tool calls, send a short holding
+  // reply instead. The very turn that *requests* the handoff still gets a
+  // full AI reply (conversationRecord here reflects state from before this
+  // turn, so it isn't true yet on that first turn — see
+  // requestHumanHandoff's execute below, which is what actually sets it).
+  if (conversationRecord?.needsHuman) {
+    await prisma.chatMessage.create({
+      data: {
+        shop: session.shop,
+        conversationId,
+        role: "assistant",
+        content: NEEDS_HUMAN_HOLDING_MESSAGE,
+      },
+    });
+
+    notifyAssistantMessage({
+      shop: session.shop,
+      conversationId,
+      content: NEEDS_HUMAN_HOLDING_MESSAGE,
+    });
+
+    return cors(
+      plainTextResponse(NEEDS_HUMAN_HOLDING_MESSAGE, {
+        "X-Conversation-Id": conversationId,
+      }),
     );
   }
 
