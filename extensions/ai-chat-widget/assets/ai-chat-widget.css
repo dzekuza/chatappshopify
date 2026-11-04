@@ -1025,7 +1025,13 @@
     max-height: 85vh;
     max-height: 85dvh;
     border-radius: var(--aicw-radius, 20px) var(--aicw-radius, 20px) 0 0;
-    box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.2);
+    /* Second shadow is a solid slab of the panel colour hanging below the
+       sheet. With the iOS keyboard open, the visual viewport ends above the
+       keyboard's translucent edge and the host page showed through as a
+       coloured gap; this paints over it. */
+    box-shadow:
+      0 -8px 30px rgba(0, 0, 0, 0.2),
+      0 100vh 0 0 #fafafa;
     transform: translateY(100%);
     transform-origin: bottom center;
     transition:
