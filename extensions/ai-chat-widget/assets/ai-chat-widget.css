@@ -1017,15 +1017,21 @@
   #ai-chat-widget-root.aicw-h-center .aicw-panel {
     position: fixed;
     top: auto;
-    bottom: 0;
+    /* --aicw-vv-* are set from window.visualViewport in the widget JS while
+       the sheet is open. With the iOS keyboard up the layout viewport keeps
+       its full height and gets panned, so a plain bottom: 0 / 85dvh sheet
+       slid up out of view with its header cut off. Falls back to the plain
+       values when the variables are unset. */
+    bottom: var(--aicw-vv-bottom, 0px);
     left: 0;
     right: 0;
     width: 100%;
     max-width: none;
     height: 85vh;
-    height: 85dvh;
+    height: min(85dvh, var(--aicw-vv-h, 85dvh));
     max-height: 85vh;
-    max-height: 85dvh;
+    max-height: min(85dvh, var(--aicw-vv-h, 85dvh));
+    overscroll-behavior: none;
     border-radius: var(--aicw-radius, 20px) var(--aicw-radius, 20px) 0 0;
     /* Second shadow is a solid slab of the panel colour hanging below the
        sheet. With the iOS keyboard open, the visual viewport ends above the
@@ -1054,7 +1060,7 @@
   .aicw-panel.aicw-show-gate {
     height: auto;
     max-height: 85vh;
-    max-height: 85dvh;
+    max-height: min(85dvh, var(--aicw-vv-h, 85dvh));
   }
 
   /* Grab-handle affordance: tells the shopper this is a sheet. Purely visual —

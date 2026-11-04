@@ -1105,7 +1105,34 @@
       }
     }
 
-    new MutationObserver(syncScrollLock).observe(root, {
+    // Keep the sheet inside the *visual* viewport. Opening the iOS keyboard
+    // shrinks and pans the visual viewport while the layout viewport stays put,
+    // so a sheet anchored to the layout viewport ends up partly off-screen.
+    var vv = window.visualViewport;
+
+    function syncViewport() {
+      if (!vv || !mobileQuery.matches || !root.classList.contains("aicw-open")) {
+        root.style.removeProperty("--aicw-vv-h");
+        root.style.removeProperty("--aicw-vv-bottom");
+        return;
+      }
+      root.style.setProperty("--aicw-vv-h", Math.round(vv.height) + "px");
+      root.style.setProperty(
+        "--aicw-vv-bottom",
+        Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)) +
+          "px"
+      );
+    }
+
+    if (vv) {
+      vv.addEventListener("resize", syncViewport);
+      vv.addEventListener("scroll", syncViewport);
+    }
+
+    new MutationObserver(function () {
+      syncScrollLock();
+      syncViewport();
+    }).observe(root, {
       attributes: true,
       attributeFilter: ["class"],
     });
@@ -1113,6 +1140,7 @@
       mobileQuery.addEventListener("change", syncScrollLock);
     }
     syncScrollLock();
+    syncViewport();
 
     gateForm.addEventListener("submit", function (event) {
       event.preventDefault();
