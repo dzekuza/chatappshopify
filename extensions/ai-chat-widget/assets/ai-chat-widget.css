@@ -1080,6 +1080,64 @@
     margin-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
   }
 
+  /* Type scale: the desktop sizes (12-14px) read small on a phone held at
+     arm's length. Inputs go to 16px for a second reason — iOS Safari zooms
+     the whole page on focus of any field under 16px. Declared here, after the
+     base rules, so equal-specificity selectors win by order. */
+  .aicw-header-title {
+    font-size: 18px;
+  }
+
+  .aicw-header-subtitle,
+  .aicw-gate-intro,
+  .aicw-empty-subtitle,
+  .aicw-topic-description {
+    font-size: 15px;
+  }
+
+  .aicw-empty-title {
+    font-size: 20px;
+  }
+
+  .aicw-topic-label,
+  .aicw-workflow-option {
+    font-size: 16px;
+  }
+
+  .aicw-message,
+  .aicw-gate-submit,
+  .aicw-product-title,
+  .aicw-product-meta {
+    font-size: 16px;
+  }
+
+  .aicw-field,
+  .aicw-gate-error,
+  .aicw-attachment-error,
+  .aicw-handoff-status,
+  .aicw-system-notice,
+  .aicw-product-out-of-stock {
+    font-size: 14px;
+  }
+
+  .aicw-message-agent-label {
+    font-size: 12px;
+  }
+
+  .aicw-input,
+  .aicw-field input {
+    font-size: 16px;
+  }
+
+  .aicw-featured-products .aicw-product-title {
+    font-size: 11px;
+  }
+
+  .aicw-featured-products .aicw-product-meta,
+  .aicw-featured-products .aicw-product-out-of-stock {
+    font-size: 10px;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .aicw-panel,
     #ai-chat-widget-root.aicw-h-left .aicw-panel,
