@@ -988,6 +988,109 @@
   }
 }
 
+/* ---- Mobile: bottom sheet --------------------------------------------
+   On phones the floating 360px card is cramped and fights the on-screen
+   keyboard, so the open panel becomes a full-width sheet docked to the bottom
+   edge that slides up. Declared after the base and reduced-motion rules on
+   purpose — it has to win over the .aicw-h-center transform and the
+   reduced-motion `transform: translateX(-50%)` for the same selectors. */
+@media (max-width: 640px) {
+  /* A transformed ancestor becomes the containing block for position: fixed
+     descendants, so the centred root's translateX would trap the sheet inside
+     the root's tiny box instead of the viewport. */
+  #ai-chat-widget-root.aicw-h-center {
+    left: auto;
+    transform: none;
+  }
+
+  /* The sheet covers the launcher; leaving it visible would just peek out
+     above the sheet's rounded corners. */
+  #ai-chat-widget-root.aicw-open .aicw-bubble,
+  #ai-chat-widget-root.aicw-open .aicw-peek {
+    display: none;
+  }
+
+  .aicw-panel,
+  #ai-chat-widget-root.aicw-h-left .aicw-panel,
+  #ai-chat-widget-root.aicw-h-center .aicw-panel {
+    position: fixed;
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    max-width: none;
+    height: 85vh;
+    height: 85dvh;
+    max-height: 85vh;
+    max-height: 85dvh;
+    border-radius: var(--aicw-radius, 20px) var(--aicw-radius, 20px) 0 0;
+    box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.2);
+    transform: translateY(100%);
+    transform-origin: bottom center;
+    transition:
+      opacity 150ms var(--aicw-ease-out),
+      transform 250ms var(--aicw-ease-out),
+      visibility 0s linear 250ms;
+  }
+
+  #ai-chat-widget-root.aicw-open .aicw-panel,
+  #ai-chat-widget-root.aicw-h-center.aicw-open .aicw-panel {
+    transform: translateY(0);
+    transition:
+      opacity 150ms var(--aicw-ease-out),
+      transform 300ms var(--aicw-ease-out),
+      visibility 0s;
+  }
+
+  .aicw-panel.aicw-show-gate {
+    height: auto;
+    max-height: 85vh;
+    max-height: 85dvh;
+  }
+
+  /* Grab-handle affordance: tells the shopper this is a sheet. Purely visual —
+     the header's close button remains the way out. */
+  .aicw-header {
+    position: relative;
+    padding-top: 22px;
+  }
+
+  .aicw-header::before {
+    content: "";
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    width: 36px;
+    height: 4px;
+    margin-left: -18px;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.15);
+  }
+
+  .aicw-form {
+    margin-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .aicw-panel,
+    #ai-chat-widget-root.aicw-h-left .aicw-panel,
+    #ai-chat-widget-root.aicw-h-center .aicw-panel {
+      transform: translateY(0);
+      transition:
+        opacity 100ms linear,
+        visibility 0s linear 100ms;
+    }
+
+    #ai-chat-widget-root.aicw-open .aicw-panel,
+    #ai-chat-widget-root.aicw-h-center.aicw-open .aicw-panel {
+      transition:
+        opacity 100ms linear,
+        visibility 0s;
+    }
+  }
+}
+
 /* ---- Proactive message peek ----------------------------------------
    The teaser that appears next to the bubble when a proactive rule fires.
    Deliberately not part of .aicw-panel: it shows *before* the contact gate,
