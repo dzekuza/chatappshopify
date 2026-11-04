@@ -1066,6 +1066,54 @@
       stopAgentPolling();
     });
 
+    // ---- Page scroll lock while the mobile sheet is open ---------------
+    //
+    // The sheet covers the page, so scrolling it must not scroll the page
+    // behind. iOS Safari ignores `overflow: hidden` on body for touch scroll,
+    // so the body is pinned with position: fixed and the scroll position is
+    // restored on release. Driven by a class observer rather than the three
+    // open/close paths (bubble, close button, restore-after-navigation) so a
+    // new way of opening can't forget to lock. Desktop keeps the floating
+    // card and the page stays scrollable.
+    var mobileQuery = window.matchMedia("(max-width: 640px)");
+    var scrollLock = null;
+
+    function syncScrollLock() {
+      var shouldLock =
+        mobileQuery.matches && root.classList.contains("aicw-open");
+      var body = document.body;
+      if (shouldLock && !scrollLock) {
+        scrollLock = {
+          y: window.pageYOffset,
+          position: body.style.position,
+          top: body.style.top,
+          width: body.style.width,
+          overflow: body.style.overflow,
+        };
+        body.style.position = "fixed";
+        body.style.top = "-" + scrollLock.y + "px";
+        body.style.width = "100%";
+        body.style.overflow = "hidden";
+      } else if (!shouldLock && scrollLock) {
+        var saved = scrollLock;
+        scrollLock = null;
+        body.style.position = saved.position;
+        body.style.top = saved.top;
+        body.style.width = saved.width;
+        body.style.overflow = saved.overflow;
+        window.scrollTo(0, saved.y);
+      }
+    }
+
+    new MutationObserver(syncScrollLock).observe(root, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+    if (mobileQuery.addEventListener) {
+      mobileQuery.addEventListener("change", syncScrollLock);
+    }
+    syncScrollLock();
+
     gateForm.addEventListener("submit", function (event) {
       event.preventDefault();
       var name = gateName.value.trim();

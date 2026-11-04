@@ -318,6 +318,8 @@
 .aicw-viewport {
   flex: 1;
   overflow-y: auto;
+  /* Don't chain scroll to the page when the thread hits its top/bottom. */
+  overscroll-behavior: contain;
   position: relative;
   display: flex;
   flex-direction: column;
